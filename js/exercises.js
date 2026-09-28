@@ -1,659 +1,431 @@
 /* ═══════════════════════════════════════════
-   exercises.js — Exercise generator
-   Blackout Studio · SIPO Guitar · Iteración 2
-
-   Generates complex, non-linear exercises for
-   all 8 practice blocks. Each exercise returns
-   an array of Note objects ready for notation
-   and audio playback.
-
-   Note = { midi, fret, string, dur, technique,
-            beat, measure, finger }
-   dur: 'w'=whole 'h'=half 'q'=quarter
-        'e'=eighth 's'=sixteenth 't'=triplet
-   technique: null | 'h' | 'p' | 'b' | '~' |
-              'sweep_d' | 'sweep_u' | 'tap' |
-              'slap' | 'pop' | 'pm'
+   exercises.js — Exercise generator v2
+   Blackout Studio · SIPO Guitar
+   
+   All exercises generate in fret range 4-17.
+   Tapping: left hand 5-9, tap 12-17.
+   No open strings unless root is E/A/D/G/B.
 ═══════════════════════════════════════════ */
 
 import { getScaleSemitones, SCALES } from './scales.js';
 
-/* ── Standard tuning MIDI bases (low→high) ── */
-const STD_GUITAR_6 = [40,45,50,55,59,64];
-const STD_GUITAR_7 = [35,40,45,50,55,59,64];
-const STD_BASS_4   = [28,33,38,43];
-const STD_BASS_5   = [23,28,33,38,43];
-const STD_BASS_6   = [23,28,33,38,43,47];
-
-/* ── Get string MIDI bases from tuning state ─ */
-function getStringBases(stringMidis) { return stringMidis; }
-
-/* ── Find fret for a target MIDI on a string ─ */
-function fretFor(baseMidi, targetMidi) {
-  const f = targetMidi - baseMidi;
-  return (f >= 0 && f <= 24) ? f : null;
-}
-
-/* ── Get scale notes as MIDI values ────────── */
-function buildScaleMidis(rootMidi, semis, stringMidis, minFret=0, maxFret=22) {
-  const notes = [];
-  stringMidis.forEach((base, si) => {
-    for (let f = minFret; f <= maxFret; f++) {
-      const midi = base + f;
-      const rel  = (midi - rootMidi + 120) % 12;
-      if (semis.includes(rel)) {
-        notes.push({ midi, fret: f, string: si, rel,
-          degIdx: semis.indexOf(rel) });
-      }
+// ── Scale note collection ─────────────────
+function scaleDots(rootMidi, semis, stringMidis, minFret=4, maxFret=16){
+  const rc = rootMidi%12;
+  const dots = [];
+  stringMidis.forEach((base,si)=>{
+    for(let f=minFret;f<=maxFret;f++){
+      const rel=((base+f)-rc+120)%12;
+      if(semis.includes(rel))
+        dots.push({midi:base+f,fret:f,string:si,rel,degIdx:semis.indexOf(rel)});
     }
   });
-  return notes;
+  return dots;
 }
 
-/* ── Get chord tones (tétrada) for a degree ─ */
-function getChordTones(rootMidi, scaleSemis, degIdx, stringMidis) {
-  // Chord = root + 3rd + 5th + 7th (diatonic)
-  const intervals = [0, 2, 4, 6].map(step =>
-    scaleSemis[(degIdx + step) % scaleSemis.length]
-  );
-  return buildScaleMidis(rootMidi, intervals, stringMidis);
+// ── Sort by pitch ────────────────────────
+function byPitch(a,b){ return a.midi-b.midi; }
+function byStr(a,b)  { return a.string-b.string||a.fret-b.fret; }
+
+// ── Build note object ────────────────────
+function N(dot, dur, beat, technique=null, pick=null, finger=null){
+  return{...dot, dur, beat, measure:Math.floor(beat/4),
+    technique, pick, finger: finger||getFinger(dot.degIdx)};
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 1 — Diatonic Thirds (Harmonic Warmup)
-   All strings, ascending + descending + skip
-═══════════════════════════════════════════ */
-export function generateThirds(rootMidi, scaleKey, stringMidis) {
+function getFinger(d){ return [1,2,3,4,1,2,3,4][d%4]||1; }
+
+/* ════════════════════════════════════════
+   BLOCK 1 — Diatonic Thirds
+════════════════════════════════════════ */
+export function generateThirds(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
-  const allNotes = buildScaleMidis(rootMidi, semis, stringMidis, 0, 15);
-
-  // Sort by midi ascending
-  allNotes.sort((a,b) => a.midi - b.midi);
-
+  const all   = scaleDots(rootMidi,semis,stringMidis,4,14).sort(byPitch);
   const notes = [];
-  let beat = 0;
+  let beat    = 0;
 
-  // Phase 1: Simple thirds ascending (note + note 2 degrees up, simultaneous)
-  // We do melodic thirds (play one then the other)
-  for (let i = 0; i < allNotes.length - 2; i++) {
-    const n1 = allNotes[i];
-    const n2 = allNotes[i + 2]; // 2 scale steps = a third
-    notes.push({ ...n1, dur:'e', beat: beat, measure: Math.floor(beat/4),
-      technique: null, finger: getFingerForDeg(n1.degIdx) });
-    beat += 0.5;
-    notes.push({ ...n2, dur:'e', beat: beat, measure: Math.floor(beat/4),
-      technique: null, finger: getFingerForDeg(n2.degIdx) });
-    beat += 0.5;
+  // Ascending thirds (skip one scale degree)
+  for(let i=0;i<all.length-2;i++){
+    notes.push(N(all[i],   'e', beat, null, i%2?'up':'down')); beat+=0.5;
+    notes.push(N(all[i+2], 'e', beat, null, i%2?'down':'up')); beat+=0.5;
   }
-
-  // Phase 2: Descending thirds
-  for (let i = allNotes.length - 1; i >= 2; i--) {
-    const n1 = allNotes[i];
-    const n2 = allNotes[i - 2];
-    notes.push({ ...n1, dur:'e', beat, measure: Math.floor(beat/4), technique: null });
-    beat += 0.5;
-    notes.push({ ...n2, dur:'e', beat, measure: Math.floor(beat/4), technique: null });
-    beat += 0.5;
+  // Descending
+  for(let i=all.length-1;i>=2;i--){
+    notes.push(N(all[i],   'e', beat, null, 'up')); beat+=0.5;
+    notes.push(N(all[i-2], 'e', beat, null, 'down')); beat+=0.5;
   }
-
-  // Phase 3: Skip pattern (1-3-2-4-3-5...) — non-linear
-  for (let i = 0; i < allNotes.length - 3; i += 2) {
-    [allNotes[i], allNotes[i+2], allNotes[i+1], allNotes[i+3]].forEach(n => {
-      if (!n) return;
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4), technique: null });
-      beat += 0.25;
+  // Skip pattern 1-3-2-4
+  for(let i=0;i<all.length-3;i+=2){
+    [all[i],all[i+2],all[i+1],all[i+3]].forEach((n,j)=>{
+      if(!n)return;
+      notes.push(N(n,'s',beat,null,j%2?'up':'down')); beat+=0.25;
     });
   }
-
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 2 — 3NPS Full Position + Cross-string
-═══════════════════════════════════════════ */
-export function generate3NPS(rootMidi, scaleKey, stringMidis, posIdx = 0) {
-  const semis = getScaleSemitones(scaleKey);
-  const lowBase = stringMidis[0] % 12;
-  const rootClass = rootMidi % 12;
+/* ════════════════════════════════════════
+   BLOCK 2 — 3NPS Full Position
+════════════════════════════════════════ */
+export function generate3NPS(rootMidi, scaleKey, stringMidis){
+  const semis   = getScaleSemitones(scaleKey);
+  const rc      = rootMidi%12;
+  const lowBase = stringMidis[0]%12;
 
-  // Find position anchor on low string
-  const degTarget = (rootClass + semis[posIdx]) % 12;
-  let anchor = 0;
-  for (let f = 0; f <= 22; f++) {
-    if ((lowBase + f) % 12 === degTarget) { anchor = f; break; }
+  // Find anchor fret (root on low string, in fret 4-9 area)
+  let anchor = 5;
+  for(let f=4;f<=16;f++){
+    if((lowBase+f)%12===rc){ anchor=f; break; }
   }
 
-  // Build 3 notes per string
-  const posNotes = [];
-  stringMidis.forEach((base, si) => {
-    let found = 0;
-    for (let f = Math.max(0, anchor-1); f <= Math.min(22, anchor+6) && found < 3; f++) {
-      const midi = base + f;
-      const rel  = (midi - rootMidi + 120) % 12;
-      if (semis.includes(rel)) {
-        posNotes.push({ midi, fret: f, string: si, rel,
-          degIdx: semis.indexOf(rel) });
+  // 3 notes per string in this position
+  const pos = [];
+  stringMidis.forEach((base,si)=>{
+    let found=0;
+    for(let f=Math.max(anchor-1,4);f<=anchor+6&&found<3;f++){
+      const rel=((base+f)-rc+120)%12;
+      if(semis.includes(rel)){
+        pos.push({midi:base+f,fret:f,string:si,rel,degIdx:semis.indexOf(rel)});
         found++;
       }
     }
   });
 
-  const notes = [];
-  let beat = 0;
+  const notes=[]; let beat=0;
+  const asc=[...pos].sort(byStr);
 
-  // Phase 1: Ascending ↓↑↓ ↑↓↑ per string
-  const asc = [...posNotes].sort((a,b) => a.string - b.string || a.fret - b.fret);
-  asc.forEach((n, i) => {
-    notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-      technique: null, pick: i%2===0 ? 'down':'up',
-      finger: getFingerForDeg(n.degIdx) });
-    beat += 0.25;
-  });
-
-  // Phase 2: Descending
-  const desc = [...asc].reverse();
-  desc.forEach((n,i) => {
-    notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-      technique: null, pick: i%2===0 ? 'up':'down' });
-    beat += 0.25;
-  });
-
-  // Phase 3: Up 2 strings, back 1 string (non-linear)
-  const strings = [...new Set(asc.map(n=>n.string))];
-  for (let si = 0; si < strings.length - 1; si++) {
-    const strNotes = asc.filter(n=>n.string===si);
-    const nextStrNotes = asc.filter(n=>n.string===si+1);
-    strNotes.forEach(n => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4), technique: null });
-      beat += 0.25;
+  // Ascending ↓↑↓
+  let pick=true;
+  asc.forEach(n=>{ notes.push(N(n,'s',beat,null,pick?'down':'up')); beat+=0.25; pick=!pick; });
+  // Descending
+  [...asc].reverse().forEach(n=>{ notes.push(N(n,'s',beat,null,pick?'up':'down')); beat+=0.25; pick=!pick; });
+  // Up 2 back 1
+  for(let si=0;si<stringMidis.length-1;si++){
+    const s0=asc.filter(n=>n.string===si);
+    const s1=asc.filter(n=>n.string===si+1);
+    [...s0,...s1,...(si>0?asc.filter(n=>n.string===si-1).slice(-1):[])].forEach(n=>{
+      notes.push(N(n,'s',beat,null,pick?'down':'up')); beat+=0.25; pick=!pick;
     });
-    nextStrNotes.forEach(n => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4), technique: null });
-      beat += 0.25;
-    });
-    if (si > 0) {
-      const prevStr = asc.filter(n=>n.string===si-1);
-      prevStr.slice(-1).forEach(n => {
-        notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4), technique: null });
-        beat += 0.25;
-      });
-    }
   }
-
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 3 — Sequence of 3 (cross-string)
-═══════════════════════════════════════════ */
-export function generateSeq3(rootMidi, scaleKey, stringMidis) {
-  const semis  = getScaleSemitones(scaleKey);
-  const allN   = buildScaleMidis(rootMidi, semis, stringMidis, 0, 14);
-  allN.sort((a,b) => a.midi - b.midi);
-
-  const notes = [];
-  let beat = 0;
-
-  // Pattern: 1-2-3, 2-3-4, 3-4-5...
-  for (let i = 0; i < allN.length - 2; i++) {
-    [allN[i], allN[i+1], allN[i+2]].forEach((n,j) => {
-      notes.push({ ...n, dur:'t', beat, measure: Math.floor(beat/4),
-        technique: j===2&&i%3===0 ? 'h' : null,
-        finger: getFingerForDeg(n.degIdx) });
-      beat += 1/3;
-    });
-  }
-
-  // Descending: 3-2-1, 4-3-2...
-  const rev = [...allN].reverse();
-  for (let i = 0; i < rev.length - 2; i++) {
-    [rev[i], rev[i+1], rev[i+2]].forEach((n,j) => {
-      notes.push({ ...n, dur:'t', beat, measure: Math.floor(beat/4),
-        technique: j===2&&i%3===0 ? 'p' : null });
-      beat += 1/3;
-    });
-  }
-
-  return notes;
-}
-
-/* ═══════════════════════════════════════════
-   BLOCK 4 — Sequence of 4 (16th notes)
-   Covers full neck 0-12
-═══════════════════════════════════════════ */
-export function generateSeq4(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BLOCK 3 — Sequence of 3
+════════════════════════════════════════ */
+export function generateSeq3(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
-  const allN  = buildScaleMidis(rootMidi, semis, stringMidis, 0, 14);
-  allN.sort((a,b) => a.midi - b.midi);
+  const all   = scaleDots(rootMidi,semis,stringMidis,4,14).sort(byPitch);
+  const notes = []; let beat=0;
 
-  const notes = [];
-  let beat = 0;
-
-  // Ascending groups of 4
-  for (let i = 0; i < allN.length - 3; i++) {
-    [allN[i],allN[i+1],allN[i+2],allN[i+3]].forEach((n,j) => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: null, pick: j%2===0 ? 'down':'up',
-        finger: getFingerForDeg(n.degIdx) });
-      beat += 0.25;
+  // Ascending 1-2-3, 2-3-4...
+  for(let i=0;i<all.length-2;i++){
+    [all[i],all[i+1],all[i+2]].forEach((n,j)=>{
+      const tech = j===2&&n.string!==all[i].string?'h':null;
+      notes.push(N(n,'t',beat,tech,j===0?'down':null)); beat+=1/3;
     });
   }
-
-  // Descending groups of 4
-  const rev = [...allN].reverse();
-  for (let i = 0; i < rev.length - 3; i++) {
-    [rev[i],rev[i+1],rev[i+2],rev[i+3]].forEach((n,j) => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: null, pick: j%2===0 ? 'up':'down' });
-      beat += 0.25;
+  // Descending 3-2-1
+  const rev=[...all].reverse();
+  for(let i=0;i<rev.length-2;i++){
+    [rev[i],rev[i+1],rev[i+2]].forEach((n,j)=>{
+      const tech = j===2&&n.string!==rev[i].string?'p':null;
+      notes.push(N(n,'t',beat,tech,j===0?'up':null)); beat+=1/3;
     });
   }
-
-  // Non-linear: up 4, back 2, up 4, back 2...
-  for (let i = 0; i < allN.length - 5; i += 2) {
-    [allN[i],allN[i+1],allN[i+2],allN[i+3],allN[i+2],allN[i+1]].forEach((n,j) => {
-      if (!n) return;
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4), technique: null });
-      beat += 0.25;
-    });
-  }
-
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 5 — Sequence of 6 (Shred + Legato)
-═══════════════════════════════════════════ */
-export function generateSeq6(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BLOCK 4 — Sequence of 4
+════════════════════════════════════════ */
+export function generateSeq4(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
-  const allN  = buildScaleMidis(rootMidi, semis, stringMidis, 0, 14);
-  allN.sort((a,b) => a.midi - b.midi);
+  const all   = scaleDots(rootMidi,semis,stringMidis,4,14).sort(byPitch);
+  const notes = []; let beat=0;
+  let pick=true;
 
-  const notes = [];
-  let beat = 0;
-
-  // Pattern: 1-2-3-2-1-2, 2-3-4-3-2-3...
-  for (let i = 0; i < allN.length - 2; i++) {
-    const grp = [allN[i],allN[i+1],allN[i+2],allN[i+1],allN[i],allN[i+1]];
-    grp.forEach((n,j) => {
-      const tech = j===1?'h':j===3?'p':j===4?'p':null;
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: tech, pick: j===0?'down':null,
-        finger: getFingerForDeg(n.degIdx) });
-      beat += 0.25;
+  for(let i=0;i<all.length-3;i++){
+    [all[i],all[i+1],all[i+2],all[i+3]].forEach(n=>{
+      notes.push(N(n,'s',beat,null,pick?'down':'up')); beat+=0.25; pick=!pick;
     });
   }
-
-  // Legato variant — only pick first note of each 6
-  for (let i = 0; i < Math.min(allN.length - 5, 24); i++) {
-    const grp = [allN[i],allN[i+1],allN[i+2],allN[i+3],allN[i+2],allN[i+1]];
-    grp.forEach((n,j) => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: j===0?null:j<3?'h':'p',
-        pick: j===0?'down':null });
-      beat += 0.25;
+  const rev=[...all].reverse();
+  for(let i=0;i<rev.length-3;i++){
+    [rev[i],rev[i+1],rev[i+2],rev[i+3]].forEach(n=>{
+      notes.push(N(n,'s',beat,null,pick?'up':'down')); beat+=0.25; pick=!pick;
     });
   }
-
+  // Up 4 back 2
+  for(let i=0;i<all.length-5;i+=2){
+    [all[i],all[i+1],all[i+2],all[i+3],all[i+2],all[i+1]].forEach(n=>{
+      if(!n)return;
+      notes.push(N(n,'s',beat,null,pick?'down':'up')); beat+=0.25; pick=!pick;
+    });
+  }
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 6 — Sweep Picking (2,3,4,5,6 strings)
+/* ════════════════════════════════════════
+   BLOCK 5 — Sequence of 6 (Shred)
+════════════════════════════════════════ */
+export function generateSeq6(rootMidi, scaleKey, stringMidis){
+  const semis = getScaleSemitones(scaleKey);
+  const all   = scaleDots(rootMidi,semis,stringMidis,4,14).sort(byPitch);
+  const notes = []; let beat=0;
+
+  // Alternate picking: 1-2-3-2-1-2
+  for(let i=0;i<all.length-2;i++){
+    const grp=[all[i],all[i+1],all[i+2],all[i+1],all[i],all[i+1]];
+    grp.forEach((n,j)=>{
+      const tech=j===1?'h':j===3?'p':j===4?'p':null;
+      notes.push(N(n,'s',beat,tech,j===0?'down':null)); beat+=0.25;
+    });
+  }
+  // Legato variant: pick only first of each 6
+  for(let i=0;i<Math.min(all.length-5,18);i++){
+    const grp=[all[i],all[i+1],all[i+2],all[i+3],all[i+2],all[i+1]];
+    grp.forEach((n,j)=>{
+      notes.push(N(n,'s',beat,j===0?null:j<3?'h':'p',j===0?'down':null)); beat+=0.25;
+    });
+  }
+  return notes;
+}
+
+/* ════════════════════════════════════════
+   BLOCK 6 — Sweep Picking (2-3-4-5-6 str)
    Neoclassical style
-═══════════════════════════════════════════ */
-export function generateSweep(rootMidi, scaleKey, stringMidis, stringCount) {
-  const semis  = getScaleSemitones(scaleKey);
-  const s      = SCALES[scaleKey];
-  const notes  = [];
-  let beat     = 0;
+════════════════════════════════════════ */
+export function generateSweep(rootMidi, scaleKey, stringMidis, stringCount){
+  const semis = getScaleSemitones(scaleKey);
+  const s     = SCALES[scaleKey];
+  const rc    = rootMidi%12;
+  const notes = []; let beat=0;
 
-  // Generate sweep arpeggio for each diatonic degree
-  s.degs.forEach((deg, degIdx) => {
-    // Chord tones for this degree: root + 3rd + 5th (triad) + 7th (tetrad)
-    const chordSemis = [0,2,4,6].map(step =>
-      semis[(degIdx + step) % semis.length]
-    );
+  s.degs.forEach((_,degIdx)=>{
+    // Chord tones: root+3rd+5th+7th of this degree
+    const cSemis=[0,2,4,6].map(step=>semis[(degIdx+step)%semis.length]);
 
-    // Find chord voicing on consecutive strings
-    const voicing = buildSweepVoicing(
-      rootMidi, chordSemis, semis, degIdx,
-      stringMidis, stringCount
-    );
+    // Build voicings for different string counts
+    [6,5,4,3,2].forEach(sc=>{
+      if(sc>stringMidis.length)return;
+      const strSlice = stringMidis.slice(0, sc);
+      const voicing  = buildVoicing(rc, cSemis, semis, strSlice, sc, 4, 14);
+      if(voicing.length<sc*0.6)return;
 
-    if (voicing.length === 0) return;
-
-    // ── Ascending sweep ↓↓↓...
-    voicing.forEach((n, i) => {
-      const isLast  = i === voicing.length - 1;
-      const tech    = isLast ? 'h' : 'sweep_d'; // hammer on top
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: tech, pick: i===0?'down':null,
-        finger: getFingerForDeg(n.degIdx) });
-      beat += 0.25;
-    });
-
-    // ── Descending sweep ↑↑↑...
-    [...voicing].reverse().forEach((n, i) => {
-      const isFirst = i === 0;
-      const tech    = isFirst ? 'p' : 'sweep_u';
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: tech, pick: i===0?'up':null });
-      beat += 0.25;
-    });
-  });
-
-  // ── 2-string dyads (neoclassical triads) ──
-  // Sweep up 2 strings then immediately link to next chord
-  s.degs.forEach((deg, degIdx) => {
-    const chordSemis = [0,2,4].map(step => semis[(degIdx+step)%semis.length]);
-    // Use strings 1-2 (high strings for neoclassical flavor)
-    const highStr = stringMidis.slice(-3);
-    const dyad    = buildSweepVoicing(rootMidi, chordSemis, semis, degIdx, highStr, 2);
-    if (dyad.length < 2) return;
-
-    // Ascending
-    dyad.forEach((n,i) => {
-      notes.push({ ...n, string: stringMidis.length-3+n.string,
-        dur:'s', beat, measure: Math.floor(beat/4),
-        technique: i===dyad.length-1?'h':'sweep_d',
-        pick: i===0?'down':null });
-      beat += 0.25;
-    });
-    // Descending
-    [...dyad].reverse().forEach((n,i) => {
-      notes.push({ ...n, string: stringMidis.length-3+n.string,
-        dur:'s', beat, measure: Math.floor(beat/4),
-        technique: i===0?'p':'sweep_u', pick: i===0?'up':null });
-      beat += 0.25;
+      // Ascending sweep
+      voicing.forEach((n,i)=>{
+        const isTop = i===voicing.length-1;
+        notes.push(N({...n,string:n.string},'s',beat,
+          isTop?'h':'sweep_d', i===0?'down':null,
+          getFinger(n.degIdx))); beat+=0.25;
+      });
+      // Descending sweep
+      [...voicing].reverse().forEach((n,i)=>{
+        const isTop = i===0;
+        notes.push(N({...n,string:n.string},'s',beat,
+          isTop?'p':'sweep_u', i===0?'up':null)); beat+=0.25;
+      });
     });
   });
 
   return notes;
 }
 
-function buildSweepVoicing(rootMidi, chordSemis, scaleSemis, degIdx, stringMidis, maxStrings) {
-  const voicing = [];
-  const count   = Math.min(maxStrings, stringMidis.length);
-
-  // Try to find one chord tone per string, ascending
-  for (let si = 0; si < count; si++) {
-    const base    = stringMidis[si];
-    let bestNote  = null;
-    let bestFret  = 999;
-
-    // Find lowest fret on this string that matches a chord tone
-    for (let f = 0; f <= 17; f++) {
-      const midi = base + f;
-      const rel  = (midi - rootMidi + 120) % 12;
-      if (chordSemis.includes(rel)) {
-        // Prefer frets near previous note's fret
-        const prevFret = voicing.length > 0 ? voicing[voicing.length-1].fret : 0;
-        if (f >= prevFret - 2 && f < bestFret) {
-          bestFret = f;
-          bestNote = { midi, fret: f, string: si, rel,
-            degIdx: scaleSemis.indexOf(rel) };
-        }
+function buildVoicing(rc, chordSemis, scaleSemis, strMidis, maxStr, minF, maxF){
+  const v=[];
+  let prevFret=minF;
+  for(let si=0;si<strMidis.length&&v.length<maxStr;si++){
+    const base=strMidis[si];
+    let best=null;
+    for(let f=Math.max(minF,prevFret-2);f<=maxF;f++){
+      const rel=((base+f)-rc+120)%12;
+      if(chordSemis.includes(rel)){
+        best={midi:base+f,fret:f,string:si,rel,degIdx:scaleSemis.indexOf(rel)};
+        break;
       }
     }
-    if (bestNote) voicing.push(bestNote);
+    if(best){ v.push(best); prevFret=best.fret; }
   }
-  return voicing;
+  return v;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 7 — Tapping (2 left + 1 tap right)
-   Diatonic intervals: 10ths, 12ths
-═══════════════════════════════════════════ */
-export function generateTapping(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BLOCK 7 — Tapping
+   Left hand: frets 5-9, tap: frets 12-17
+════════════════════════════════════════ */
+export function generateTapping(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
-  const s     = SCALES[scaleKey];
-  const notes = [];
-  let beat    = 0;
+  const rc    = rootMidi%12;
+  const notes = []; let beat=0;
 
-  // For each string, create tap pattern:
-  // Left: fret X (finger 1), fret X+2 (finger 3/4), Tap: fret X+7 or X+12
-  stringMidis.forEach((base, si) => {
-    if (si > stringMidis.length - 2) return; // skip highest string
+  stringMidis.forEach((base,si)=>{
+    if(si>stringMidis.length-2)return; // skip highest
 
-    // Find 3 positions: low, mid, high (tap)
-    const scaleFretsOnStr = [];
-    for (let f = 0; f <= 22; f++) {
-      const rel = ((base+f) - rootMidi + 120) % 12;
-      if (semis.includes(rel)) scaleFretsOnStr.push({f, rel, degIdx:semis.indexOf(rel)});
+    // Left hand notes: frets 5-9
+    const lhFrets=[];
+    for(let f=5;f<=10;f++){
+      const rel=((base+f)-rc+120)%12;
+      if(semis.includes(rel))lhFrets.push({f,rel,degIdx:semis.indexOf(rel)});
+    }
+    // Tap notes: frets 12-17
+    const tapFrets=[];
+    for(let f=12;f<=17;f++){
+      const rel=((base+f)-rc+120)%12;
+      if(semis.includes(rel))tapFrets.push({f,rel,degIdx:semis.indexOf(rel)});
     }
 
-    // Take groups of 3: [0]=finger1, [2]=finger4, [7-9 frets up]=tap
-    for (let i = 0; i < scaleFretsOnStr.length - 8; i += 3) {
-      const n1   = scaleFretsOnStr[i];
-      const n2   = scaleFretsOnStr[i+2];
-      const tapN = scaleFretsOnStr[i+7] || scaleFretsOnStr[i+6];
-      if (!tapN) continue;
+    for(let i=0;i<lhFrets.length-1&&tapFrets.length>0;i+=2){
+      const n1  = lhFrets[i];
+      const n2  = lhFrets[i+1]||lhFrets[i];
+      const tap = tapFrets[i%tapFrets.length];
+      if(!n1||!tap)continue;
 
-      // Pattern: n1 (pick) → n2 (hammer) → tap → n2 (pull) → n1 (pull)
+      const mk=(dot,f)=>({midi:base+f,fret:f,string:si,
+        rel:dot.rel,degIdx:dot.degIdx});
+
+      // Pattern: pick → hammer → tap → pull → pull
       [
-        { ...n1,   technique: null,   pick:'down', dur:'s' },
-        { ...n2,   technique: 'h',    pick: null,  dur:'s' },
-        { ...tapN, technique: 'tap',  pick: null,  dur:'s' },
-        { ...n2,   technique: 'p',    pick: null,  dur:'s' },
-        { ...n1,   technique: 'p',    pick: null,  dur:'s' },
-      ].forEach(n => {
-        notes.push({ ...n, midi: base+n.f, string: si,
-          beat, measure: Math.floor(beat/4),
-          finger: n.technique==='tap'?'T':getFingerForDeg(n.degIdx) });
-        beat += 0.25;
-      });
+        {...mk(n1,n1.f), dur:'s', beat, technique:null,  pick:'down', finger:1},
+        {...mk(n2,n2.f), dur:'s', beat:beat+0.25, technique:'h', pick:null, finger:3},
+        {...mk(tap,tap.f),dur:'s',beat:beat+0.5,technique:'tap',pick:null,finger:'T'},
+        {...mk(n2,n2.f), dur:'s', beat:beat+0.75,technique:'p', pick:null, finger:3},
+        {...mk(n1,n1.f), dur:'s', beat:beat+1,  technique:'p', pick:null, finger:1},
+      ].forEach(n=>notes.push({...n,measure:Math.floor(n.beat/4)}));
+      beat+=1.25;
     }
   });
-
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BLOCK 8 — Targeting (chord tones on beats)
-═══════════════════════════════════════════ */
-export function generateTargeting(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BLOCK 8 — Targeting
+════════════════════════════════════════ */
+export function generateTargeting(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
   const s     = SCALES[scaleKey];
-  const notes = [];
-  let beat    = 0;
+  const notes = []; let beat=0;
 
-  // Progression: i – bVII – bVI – bVII (rock/metal)
-  // Use degrees 0, 6, 5, 6 of scale
-  const progDegs = [0, Math.min(6, s.degs.length-1),
-                    Math.min(5, s.degs.length-1),
-                    Math.min(6, s.degs.length-1)];
+  // Prog: i bVII bVI bVII
+  const progDegs=[0,Math.min(6,s.degs.length-1),
+                    Math.min(5,s.degs.length-1),
+                    Math.min(6,s.degs.length-1)];
 
-  progDegs.forEach(degIdx => {
-    // Chord tones for this degree
-    const chordSemis = [0,2,4].map(step =>
-      semis[(degIdx + step) % semis.length]
-    );
+  progDegs.forEach(degIdx=>{
+    const rootSemi=semis[degIdx];
+    const fifthSemi=semis[(degIdx+4)%semis.length];
 
-    // Beat 1: MUST land on root of chord (targeting)
-    const rootSemi   = semis[degIdx];
-    const rootNotes  = buildScaleMidis(rootMidi, [rootSemi], stringMidis, 4, 14);
-    const targetNote = rootNotes[Math.floor(rootNotes.length/2)]; // midrange
+    // Target notes in comfortable zone
+    const allScale = scaleDots(rootMidi,semis,stringMidis,5,14).sort(byPitch);
+    const targets  = scaleDots(rootMidi,[rootSemi],stringMidis,5,14).sort(byPitch);
+    const target   = targets[Math.floor(targets.length/2)];
 
-    // Approach: scale run leading to chord tone
-    const allScale = buildScaleMidis(rootMidi, semis, stringMidis, 4, 14);
-    allScale.sort((a,b) => a.midi - b.midi);
-
-    // Find notes below target
-    const approach = allScale.filter(n =>
-      n.midi < (targetNote?.midi||60) &&
-      n.midi >= (targetNote?.midi||60) - 7
-    ).slice(-3);
-
-    // Play approach notes then target
-    approach.forEach(n => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: null, isApproach: true });
-      beat += 0.25;
+    // Approach: 3 scale notes leading to target
+    const approach = allScale.filter(n=>n.midi<(target?.midi||60)&&n.midi>=(target?.midi||60)-7).slice(-3);
+    approach.forEach(n=>{
+      notes.push(N(n,'s',beat,null,beat%0.5<0.01?'down':'up')); beat+=0.25;
     });
-
-    if (targetNote) {
-      notes.push({ ...targetNote, dur:'q', beat, measure: Math.floor(beat/4),
-        technique: '~', isTarget: true,
-        finger: getFingerForDeg(targetNote.degIdx) });
-      beat += 1;
+    if(target){
+      notes.push({...N(target,'q',beat,'~',null),isTarget:true}); beat+=1;
     }
-
-    // Beat 3: land on 5th of chord
-    const fifthSemi  = semis[(degIdx + 4) % semis.length];
-    const fifthNotes = buildScaleMidis(rootMidi, [fifthSemi], stringMidis, 4, 14);
-    const fifth      = fifthNotes[Math.floor(fifthNotes.length/2)];
-
-    // Fill beats 2-3 with scale passing tones
-    const fill = allScale.filter(n =>
-      n.midi > (targetNote?.midi||60) &&
-      n.midi < (fifth?.midi||65)
-    ).slice(0, 3);
-
-    fill.forEach(n => {
-      notes.push({ ...n, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: null });
-      beat += 0.25;
-    });
-
-    if (fifth) {
-      notes.push({ ...fifth, dur:'e', beat, measure: Math.floor(beat/4),
-        technique: '~', isTarget: true });
-      beat += 0.5;
+    // Fill to beat 3
+    while(beat%4<3&&allScale.length>0){
+      const n=allScale[Math.round(beat*3)%allScale.length];
+      notes.push(N(n,'s',beat,null,null)); beat+=0.25;
     }
-
-    // Fill to end of measure
-    while (beat % 4 !== 0) {
-      const pad = allScale[Math.floor(beat) % allScale.length];
-      if (pad) notes.push({ ...pad, dur:'s', beat, measure: Math.floor(beat/4),
-        technique: null });
-      beat += 0.25;
+    // Fifth on beat 3
+    const fifths=scaleDots(rootMidi,[fifthSemi],stringMidis,5,14).sort(byPitch);
+    const fifth =fifths[Math.floor(fifths.length/2)];
+    if(fifth){ notes.push({...N(fifth,'e',beat,'~',null),isTarget:true}); beat+=0.5; }
+    // Pad to end of measure
+    while(beat%4!==0&&beat%4>0.01){
+      if(allScale.length>0) notes.push(N(allScale[Math.round(beat)%allScale.length],'s',beat,null,null));
+      beat+=0.25;
     }
   });
-
   return notes;
 }
 
-/* ═══════════════════════════════════════════
-   BASS EXERCISES
-═══════════════════════════════════════════ */
-export function generateBassWalking(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BASS — Walking Bass
+════════════════════════════════════════ */
+export function generateBassWalking(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
   const s     = SCALES[scaleKey];
-  const notes = [];
-  let beat    = 0;
+  const notes = []; let beat=0;
+  const progDegs=[0,3,4,0];
 
-  // Walking bass: root on beat 1, 3rd on beat 2, 5th on beat 3,
-  // chromatic approach on beat 4 leading to next root
-  const progDegs = [0, 3, 4, 0]; // I IV V I
+  progDegs.forEach((degIdx,ci)=>{
+    const cTones=[0,2,4].map(st=>semis[(degIdx+st)%semis.length]);
+    const nextDeg=progDegs[(ci+1)%progDegs.length];
 
-  progDegs.forEach((degIdx, ci) => {
-    const chordTones = [0,2,4].map(step =>
-      semis[(degIdx + step) % semis.length]
-    );
+    // Root on low string, fret 4-12
+    const root5th=scaleDots(rootMidi,[semis[degIdx]],stringMidis,4,12)
+      .filter(n=>n.string===0)[0];
+    const third=scaleDots(rootMidi,[cTones[1]],stringMidis,4,12)
+      .filter(n=>n.string<=1)[0];
+    const fifth=scaleDots(rootMidi,[cTones[2]],stringMidis,4,12)
+      .filter(n=>n.string<=1)[0];
 
-    const nextDeg = progDegs[(ci+1) % progDegs.length];
-    const nextRoot = semis[nextDeg];
+    // Chromatic approach (semitone below next root)
+    const nextRootBase=rootMidi+semis[nextDeg];
+    const approachMidi=nextRootBase-1;
+    const approachFret=approachMidi-stringMidis[0];
+    const approachOk=approachFret>=4&&approachFret<=14;
 
-    // Beat 1: root (on low string)
-    const rootSemi = semis[degIdx];
-    const rootNote = buildScaleMidis(rootMidi, [rootSemi], stringMidis, 0, 12)
-      .filter(n => n.string === 0)[0];
-
-    // Beat 2: 3rd
-    const thirdNote = buildScaleMidis(rootMidi, [chordTones[1]], stringMidis, 0, 12)
-      .filter(n => n.string <= 1)[0];
-
-    // Beat 3: 5th
-    const fifthNote = buildScaleMidis(rootMidi, [chordTones[2]], stringMidis, 0, 12)
-      .filter(n => n.string <= 1)[0];
-
-    // Beat 4: chromatic approach to next root (semitone below)
-    const nextRootMidi = rootMidi + nextRoot;
-    const approachMidi = nextRootMidi - 1;
-    const approachFret = approachMidi - stringMidis[0];
-
-    [rootNote, thirdNote, fifthNote].forEach((n,i) => {
-      if (!n) { beat++; return; }
-      notes.push({ ...n, dur:'q', beat, measure: Math.floor(beat/4),
-        technique: i===1?'p':null, pick: 'finger' });
+    [root5th,third,fifth].forEach((n,i)=>{
+      if(!n){beat++;return;}
+      notes.push({...n,dur:'q',beat,measure:Math.floor(beat/4),
+        technique:i===1?null:null,pick:'finger',finger:i+1});
       beat++;
     });
-
-    // Chromatic approach
-    if (approachFret >= 0 && approachFret <= 22) {
-      notes.push({ midi: approachMidi, fret: approachFret, string: 0,
-        dur:'q', beat, measure: Math.floor(beat/4),
-        technique: 'h', pick: 'finger', rel: -1, degIdx: -1 });
+    if(approachOk){
+      notes.push({midi:approachMidi,fret:approachFret,string:0,
+        dur:'q',beat,measure:Math.floor(beat/4),
+        technique:'h',pick:'finger',rel:-1,degIdx:-1});
     }
     beat++;
   });
-
   return notes;
 }
 
-export function generateSlapPop(rootMidi, scaleKey, stringMidis) {
+/* ════════════════════════════════════════
+   BASS — Slap + Pop
+════════════════════════════════════════ */
+export function generateSlapPop(rootMidi, scaleKey, stringMidis){
   const semis = getScaleSemitones(scaleKey);
-  const notes = [];
-  let beat    = 0;
+  const notes = []; let beat=0;
 
-  // Classic slap pattern: S(root) S(oct) P(5th) S(root) ghost ghost...
-  const rootNote = buildScaleMidis(rootMidi, [0], stringMidis, 0, 12)
-    .filter(n=>n.string===0)[0];
-  const octNote  = rootNote ? {...rootNote, midi:rootNote.midi+12,
-    fret:rootNote.fret+12, string:1} : null;
-  const fifthNote = buildScaleMidis(rootMidi, [semis[4]||7], stringMidis, 0,12)
-    .filter(n=>n.string<=1)[0];
+  const root=scaleDots(rootMidi,[0],stringMidis,4,12).filter(n=>n.string===0)[0];
+  const fifth=scaleDots(rootMidi,[semis[4]||7],stringMidis,4,12).filter(n=>n.string<=1)[0];
+  // Octave: same fret+12 on string above
+  const oct = root?{...root,midi:root.midi+12,fret:root.fret+12,string:1}:null;
 
-  for (let measure = 0; measure < 4; measure++) {
-    // Slap root
-    if (rootNote) {
-      notes.push({ ...rootNote, dur:'e', beat, measure, technique:'slap', pick:'slap' });
-    }
-    beat += 0.5;
-
-    // Slap octave
-    if (octNote) {
-      notes.push({ ...octNote, dur:'e', beat, measure, technique:'slap', pick:'slap' });
-    }
-    beat += 0.5;
-
-    // Pop 5th
-    if (fifthNote) {
-      notes.push({ ...fifthNote, dur:'e', beat, measure, technique:'pop', pick:'pop' });
-    }
-    beat += 0.5;
-
-    // Ghost note (muted)
-    if (rootNote) {
-      notes.push({ ...rootNote, dur:'s', beat, measure, technique:'pm',
-        pick:'slap', isMuted:true });
-    }
-    beat += 0.5;
+  for(let m=0;m<4;m++){
+    if(root) notes.push({...root,dur:'e',beat,measure:m,technique:'slap',pick:'slap'}); beat+=0.5;
+    if(oct&&oct.fret<=17) notes.push({...oct,dur:'e',beat,measure:m,technique:'slap',pick:'slap'}); beat+=0.5;
+    if(fifth) notes.push({...fifth,dur:'e',beat,measure:m,technique:'pop',pick:'pop'}); beat+=0.5;
+    if(root) notes.push({...root,dur:'s',beat,measure:m,technique:'pm',pick:'slap',isMuted:true}); beat+=0.25;
+    beat+=0.25; // rest
   }
-
   return notes;
 }
 
-/* ── Helper: finger assignment by degree ─── */
-function getFingerForDeg(degIdx) {
-  const map = [1,2,3,4,1,2,3,4];
-  return map[degIdx % 4] || 1;
-}
-
-/* ── Master exercise builder ─────────────── */
-export function buildExercise(type, rootMidi, scaleKey, stringMidis, instrument, stringCount) {
-  switch(type) {
-    case 'thirds':    return generateThirds(rootMidi, scaleKey, stringMidis);
-    case '3nps':      return generate3NPS(rootMidi, scaleKey, stringMidis);
-    case 'seq3':      return generateSeq3(rootMidi, scaleKey, stringMidis);
-    case 'seq4':      return generateSeq4(rootMidi, scaleKey, stringMidis);
-    case 'seq6':      return generateSeq6(rootMidi, scaleKey, stringMidis);
-    case 'sweep':     return generateSweep(rootMidi, scaleKey, stringMidis, stringCount);
-    case 'tapping':   return generateTapping(rootMidi, scaleKey, stringMidis);
-    case 'targeting': return generateTargeting(rootMidi, scaleKey, stringMidis);
-    case 'walking':   return generateBassWalking(rootMidi, scaleKey, stringMidis);
-    case 'slap':      return generateSlapPop(rootMidi, scaleKey, stringMidis);
-    default:          return [];
-  }
+/* ── Master builder ──────────────────────── */
+export function buildExercise(type, rootMidi, scaleKey, stringMidis, instrument, stringCount){
+  try{
+    switch(type){
+      case 'thirds':    return generateThirds(rootMidi,scaleKey,stringMidis);
+      case '3nps':      return generate3NPS(rootMidi,scaleKey,stringMidis);
+      case 'seq3':      return generateSeq3(rootMidi,scaleKey,stringMidis);
+      case 'seq4':      return generateSeq4(rootMidi,scaleKey,stringMidis);
+      case 'seq6':      return generateSeq6(rootMidi,scaleKey,stringMidis);
+      case 'sweep':     return generateSweep(rootMidi,scaleKey,stringMidis,stringCount);
+      case 'tapping':   return generateTapping(rootMidi,scaleKey,stringMidis);
+      case 'targeting': return generateTargeting(rootMidi,scaleKey,stringMidis);
+      case 'walking':   return generateBassWalking(rootMidi,scaleKey,stringMidis);
+      case 'slap':      return generateSlapPop(rootMidi,scaleKey,stringMidis);
+      default: return [];
+    }
+  }catch(e){ console.error('Exercise error:',e); return []; }
 }

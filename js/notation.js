@@ -1,365 +1,380 @@
 /* ═══════════════════════════════════════════
-   notation.js — Staff + Tab SVG renderer
-   Blackout Studio · SIPO Guitar · Iteración 2
-
-   Renders a grand staff (treble clef + tab)
-   with full technique notation:
-   h=hammer-on p=pull-off b=bend ~=vibrato
-   sweep_d/u T=tap slap pop pm=palm mute
+   notation.js — Staff + Tab SVG renderer v2
+   Blackout Studio · SIPO Guitar
+   
+   Renders multi-system notation:
+   - 3 measures per system, wraps vertically
+   - Thin engraved-style note heads
+   - Staff + Tab per system
+   - Technique markers: h p b ~ sweep T S P PM
 ═══════════════════════════════════════════ */
 
-/* ── Layout constants ───────────────────── */
+export const DUR_BEATS  = { w:4, h:2, q:1, e:0.5, s:0.25, t:1/3 };
+const DUR_FLAGS          = { w:0, h:0, q:0, e:1, s:2, t:1 };
+const DUR_FILLED         = { w:false, h:false, q:true, e:true, s:true, t:true };
+const MEASURES_PER_LINE  = 3;
+
+/* ── Layout ─────────────────────────────── */
 const L = {
-  STAFF_TOP:    40,    // Y of top staff line
-  STAFF_GAP:    8,     // px between staff lines
-  STAFF_LINES:  5,
-  TAB_TOP:      160,   // Y of top tab line
-  TAB_GAP:      14,    // px between tab strings
-  PAD_L:        60,    // left margin
-  PAD_R:        20,
-  BEAT_W:       52,    // px per beat
-  NOTE_R:       6,     // note head radius
-  CLEF_W:       40,    // clef + time sig space
+  PAD_L:      56,   // left margin (clef + time sig)
+  PAD_R:      20,
+  PAD_TOP:    24,
+  BEAT_W:     48,   // px per beat
+  STAFF_GAP:  7,    // px between staff lines
+  STAFF_LINES:5,
+  TAB_GAP:    13,   // px between tab string lines
+  STAFF_TO_TAB: 38, // gap between bottom staff line and top tab line
+  SYS_GAP:    28,   // gap between systems (bottom tab to next top staff)
+  CLEF_W:     38,
 };
 
-/* ── Staff line Y positions ─────────────── */
-function lineY(line) {
-  // line 0 = top line, 4 = bottom line
-  return L.STAFF_TOP + line * L.STAFF_GAP;
-}
+function staffH(){ return (L.STAFF_LINES-1)*L.STAFF_GAP; }
+function tabH(n) { return (n-1)*L.TAB_GAP; }
+function sysH(n) { return staffH() + L.STAFF_TO_TAB + tabH(n); }
 
-/* ── Tab string Y ────────────────────────── */
-function tabY(si, totalStrings) {
-  // si 0 = highest string (top of tab)
-  return L.TAB_TOP + si * L.TAB_GAP;
-}
+function lineY(base, line){ return base + line * L.STAFF_GAP; }
+function tabStrY(base, si) { return base + si * L.TAB_GAP; }
 
-/* ── MIDI to staff position ──────────────── */
-// Returns {line: float, ledger: bool}
-// line 0 = top staff line (E5 in treble clef)
-// Middle C = C4 = line 6 (below staff)
-const TREBLE_BOTTOM = 40; // MIDI of bottom line (E2)
-const SEMITONES_IN_SCALE = [0,2,4,5,7,9,11]; // C major positions
-
-function midiToStaffPos(midi) {
-  // Convert MIDI to diatonic position relative to treble clef
-  const octave   = Math.floor(midi / 12) - 1;
-  const semitone = midi % 12;
-
-  // Find the diatonic step (0-6)
-  let diaStep = 0;
-  for (let i = SEMITONES_IN_SCALE.length - 1; i >= 0; i--) {
-    if (semitone >= SEMITONES_IN_SCALE[i]) { diaStep = i; break; }
-  }
-
-  // Absolute diatonic position from C0
-  const absPos = octave * 7 + diaStep;
-
-  // Treble clef: B4 = line 0 (top), G4 = line 1...
-  // E4 = bottom line = line 4
-  // B4 in absolute = 4*7+6 = 34
-  const B4_ABS = 4 * 7 + 6; // B4
-  const staffPos = (B4_ABS - absPos) / 2; // half-spaces
-
+/* ── Colors ──────────────────────────────── */
+function C(theme){
+  const d = theme==='dark';
   return {
-    y:      L.STAFF_TOP + staffPos * L.STAFF_GAP,
-    pos:    staffPos,
-    octave, diaStep,
-    isAccidental: !SEMITONES_IN_SCALE.includes(semitone),
-    accidental: semitone === (SEMITONES_IN_SCALE[diaStep] + 1) % 12 ? '#' : 'b',
+    bg:    d?'#111827':'#ffffff',
+    staff: d?'#334155':'#94a3b8',
+    note:  d?'#f1f5f9':'#0f172a',
+    acc:   d?'#f1f5f9':'#0f172a',
+    tab:   d?'#a78bfa':'#6d28d9',
+    h:     d?'#06b6d4':'#0891b2',
+    sweep: d?'#7c3aed':'#5b21b6',
+    tap:   d?'#ec4899':'#be185d',
+    slap:  d?'#f59e0b':'#d97706',
+    pop:   d?'#10b981':'#059669',
+    dim:   d?'#475569':'#94a3b8',
+    bar:   d?'#334155':'#94a3b8',
+    hl:    '#f59e0b',
+    clef:  d?'#64748b':'#475569',
+    target:d?'#ef4444':'#dc2626',
   };
 }
 
-/* ── Duration to beat length ─────────────── */
-const DUR_BEATS = { w:4, h:2, q:1, e:0.5, s:0.25, t:1/3 };
-const DUR_FLAGS  = { w:0, h:0, q:0, e:1,   s:2,    t:1   };
-const DUR_FILLED = { w:false, h:false, q:true, e:true, s:true, t:true };
+/* ── MIDI → staff position ───────────────── */
+// Returns y offset from top staff line (positive = below)
+// Treble clef: top line = F5(77), spaces E5 D5 C5 B4, bottom line = E4(64)
+// Each step = half a STAFF_GAP
+const DIA = [0,0,1,1,2,3,3,4,4,5,5,6]; // semitone → diatonic step in octave
+const DIA_SEMI = [0,2,4,5,7,9,11]; // diatonic step → semitone
 
-/* ── Color palette ───────────────────────── */
-function getColors(theme) {
-  const d = theme === 'dark';
+function midiToStaffY(midi, staffTopY){
+  // Convert midi to diatonic position
+  const oct  = Math.floor(midi/12)-1;
+  const semi = midi%12;
+  // Find diatonic step (0=C, 1=D, ... 6=B)
+  let dStep = DIA[semi];
+  const absPos = oct*7 + dStep; // absolute diatonic position from C(-1)
+  // Treble clef reference: B4 = midi 71
+  // B4 diatonic abs = 4*7+6 = 34
+  const B4_ABS = 34;
+  const stepsFromB4 = B4_ABS - absPos; // positive = below B4
+  const yOffset = stepsFromB4 * (L.STAFF_GAP/2);
   return {
-    bg:     d ? '#111827' : '#ffffff',
-    staff:  d ? '#334155' : '#94a3b8',
-    note:   d ? '#f1f5f9' : '#0f172a',
-    tab:    d ? '#a78bfa' : '#6d28d9',
-    tech:   d ? '#06b6d4' : '#0891b2',
-    target: d ? '#ef4444' : '#dc2626',
-    slap:   d ? '#f59e0b' : '#d97706',
-    pop:    d ? '#10b981' : '#059669',
-    sweep:  d ? '#7c3aed' : '#5b21b6',
-    tap:    d ? '#ec4899' : '#be185d',
-    dim:    d ? '#475569' : '#94a3b8',
-    clef:   d ? '#64748b' : '#475569',
+    y: staffTopY + yOffset,
+    isAccidental: ![0,2,4,5,7,9,11].includes(semi),
+    acc: [1,3,6,8,10].includes(semi) ? '#' : 'b',
+    dStep, absPos
   };
 }
 
-/* ════════════════════════════════════════════
-   MAIN RENDER FUNCTION
-════════════════════════════════════════════ */
-export function renderNotation({
-  notes,
-  stringMidis,
-  instrument = 'guitar',
-  theme      = 'dark',
-  currentBeat = -1,   // for playback highlight
-  timeSignature = [4, 4],
-  title = '',
-}) {
-  if (!notes || notes.length === 0) return '<svg></svg>';
+/* ── Note head (thin, engraved style) ────── */
+function noteHead(x, y, filled, color, isActive){
+  const col = isActive ? '#f59e0b' : color;
+  if (!filled) {
+    // Open note head (whole/half) — thin ellipse
+    return `<ellipse cx="${x}" cy="${y}" rx="5.5" ry="3.8"
+      fill="none" stroke="${col}" stroke-width="1.2"
+      transform="rotate(-18,${x},${y})"/>`;
+  }
+  // Filled note head — solid thin ellipse
+  return `<ellipse cx="${x}" cy="${y}" rx="5" ry="3.5"
+    fill="${col}" stroke="${col}" stroke-width="0.5"
+    transform="rotate(-18,${x},${y})"/>`;
+}
 
-  const totalStrings = stringMidis.length;
-  const C            = getColors(theme);
-  const maxBeat      = Math.max(...notes.map(n => n.beat + DUR_BEATS[n.dur||'s']));
-  const measures     = Math.ceil(maxBeat / timeSignature[0]);
-  const totalW       = L.PAD_L + L.CLEF_W + measures * timeSignature[0] * L.BEAT_W + L.PAD_R;
-  const totalH       = L.TAB_TOP + totalStrings * L.TAB_GAP + 50;
+/* ── Stem ────────────────────────────────── */
+function stem(x, noteY, stemUp, color){
+  const len   = 26;
+  const nx    = x + (stemUp ? 4.5 : -4.5);
+  const y1    = stemUp ? noteY - len : noteY + len;
+  const y2    = stemUp ? noteY - 2  : noteY + 2;
+  return `<line x1="${nx}" y1="${y1}" x2="${nx}" y2="${y2}"
+    stroke="${color}" stroke-width="1"/>`;
+}
 
-  let svg = `<svg viewBox="0 0 ${totalW} ${totalH}" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,sans-serif;width:100%;height:auto">`;
-  svg += `<rect width="${totalW}" height="${totalH}" fill="${C.bg}"/>`;
+/* ── Flag ────────────────────────────────── */
+function flags(x, noteY, stemUp, count, color){
+  let out = '';
+  const nx = x + (stemUp ? 4.5 : -4.5);
+  const sy = stemUp ? noteY - 26 : noteY + 26;
+  for(let i=0;i<count;i++){
+    const fy  = stemUp ? sy + i*6 : sy - i*6;
+    const dir = stemUp ? 1 : -1;
+    out += `<path d="M${nx} ${fy} C${nx+10} ${fy+5*dir} ${nx+12} ${fy+12*dir} ${nx+6} ${fy+18*dir}"
+      fill="none" stroke="${color}" stroke-width="1.1"/>`;
+  }
+  return out;
+}
 
-  // ── Title ──
-  if (title) {
-    svg += `<text x="${totalW/2}" y="20" text-anchor="middle" font-size="12"
-      font-weight="700" fill="${C.dim}" letter-spacing="1">${title}</text>`;
+/* ── Ledger lines ─────────────────────────── */
+function ledgers(x, staffTopY, noteY, color){
+  let out = '';
+  const staffBot = staffTopY + (L.STAFF_LINES-1)*L.STAFF_GAP;
+  // Check if ledger lines are needed above or below staff
+  // Each ledger line at a line position (not space)
+  for(let l = -1; l >= -6; l--){
+    const ly = staffTopY + l*L.STAFF_GAP;
+    if(Math.abs(noteY - ly) < L.STAFF_GAP*0.6){
+      out += `<line x1="${x-9}" y1="${ly}" x2="${x+9}" y2="${ly}"
+        stroke="${color}" stroke-width="1"/>`;
+    }
+  }
+  for(let l = L.STAFF_LINES; l <= L.STAFF_LINES+5; l++){
+    const ly = staffTopY + l*L.STAFF_GAP;
+    if(Math.abs(noteY - ly) < L.STAFF_GAP*0.6){
+      out += `<line x1="${x-9}" y1="${ly}" x2="${x+9}" y2="${ly}"
+        stroke="${color}" stroke-width="1"/>`;
+    }
+  }
+  return out;
+}
+
+/* ── Technique arc (h/p slur) ─────────────── */
+function techArc(x1, x2, y, tech, color){
+  const mx = (x1+x2)/2;
+  const arc = tech==='h' ? -10 : 10;
+  return `<path d="M${x1} ${y-6} Q${mx} ${y-6+arc} ${x2} ${y-6}"
+    fill="none" stroke="${color}" stroke-width="1"/>
+  <text x="${mx}" y="${y-14}" font-size="8" text-anchor="middle"
+    fill="${color}" font-weight="600">${tech}</text>`;
+}
+
+/* ── Main render ─────────────────────────── */
+export function renderNotation({ notes, stringMidis, instrument='guitar',
+  theme='dark', currentBeat=-1, title='' }){
+
+  if(!notes||notes.length===0) return emptyStaff(theme, title);
+
+  const col    = C(theme);
+  const nStr   = stringMidis.length;
+  const beatsPerMeasure = 4;
+  const totalBeats = Math.max(...notes.map(n=>n.beat+(DUR_BEATS[n.dur||'s']||0.25)));
+  const totalMeasures  = Math.ceil(totalBeats / beatsPerMeasure);
+  const totalSystems   = Math.ceil(totalMeasures / MEASURES_PER_LINE);
+
+  // Canvas dimensions
+  const measuresW = MEASURES_PER_LINE * beatsPerMeasure * L.BEAT_W;
+  const W  = L.PAD_L + L.CLEF_W + measuresW + L.PAD_R;
+  const SH = sysH(nStr);  // height of one system
+  const H  = L.PAD_TOP + totalSystems*(SH + L.SYS_GAP) + 20;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
+    style="font-family:Inter,sans-serif;width:100%;height:auto">`;
+  svg += `<rect width="${W}" height="${H}" fill="${col.bg}"/>`;
+
+  // Title
+  if(title){
+    svg += `<text x="${W/2}" y="16" text-anchor="middle" font-size="11"
+      font-weight="700" fill="${col.dim}" letter-spacing="0.5">${title}</text>`;
   }
 
-  // ── Staff lines ──
-  for (let line = 0; line < L.STAFF_LINES; line++) {
-    const y = lineY(line);
-    svg += `<line x1="${L.PAD_L}" y1="${y}" x2="${totalW - L.PAD_R}" y2="${y}"
-      stroke="${C.staff}" stroke-width="1"/>`;
+  // Render each system
+  for(let sys=0; sys<totalSystems; sys++){
+    const sysMeasureStart = sys * MEASURES_PER_LINE;
+    const sysMeasureEnd   = Math.min(sysMeasureStart + MEASURES_PER_LINE, totalMeasures);
+    const sysBeatStart    = sysMeasureStart * beatsPerMeasure;
+    const sysBeatEnd      = sysMeasureEnd   * beatsPerMeasure;
+
+    const sysY     = L.PAD_TOP + sys*(SH + L.SYS_GAP);
+    const staffTopY = sysY;
+    const tabTopY   = sysY + staffH() + L.STAFF_TO_TAB;
+
+    // ── Staff lines ──
+    for(let l=0;l<L.STAFF_LINES;l++){
+      const y = lineY(staffTopY, l);
+      svg += `<line x1="${L.PAD_L}" y1="${y}" x2="${W-L.PAD_R}" y2="${y}"
+        stroke="${col.staff}" stroke-width="0.8"/>`;
+    }
+
+    // ── Clef (only first system gets full clef+timesig, rest get clef only) ──
+    svg += `<text x="${L.PAD_L+2}" y="${staffTopY+28}" font-size="42"
+      fill="${col.clef}" font-family="serif" opacity="0.85">𝄞</text>`;
+
+    if(sys===0){
+      // Time signature
+      svg += `<text x="${L.PAD_L+28}" y="${staffTopY+11}" text-anchor="middle"
+        font-size="16" font-weight="900" fill="${col.note}">4</text>`;
+      svg += `<text x="${L.PAD_L+28}" y="${staffTopY+25}" text-anchor="middle"
+        font-size="16" font-weight="900" fill="${col.note}">4</text>`;
+    }
+
+    // ── Tab lines ──
+    svg += `<text x="${L.PAD_L-14}" y="${tabTopY+5}" font-size="14"
+      font-weight="900" fill="${col.tab}" text-anchor="middle">T</text>`;
+    svg += `<text x="${L.PAD_L-14}" y="${tabTopY+5+(nStr>4?9:11)}" font-size="14"
+      font-weight="900" fill="${col.tab}" text-anchor="middle">A</text>`;
+    svg += `<text x="${L.PAD_L-14}" y="${tabTopY+5+(nStr>4?18:22)}" font-size="14"
+      font-weight="900" fill="${col.tab}" text-anchor="middle">B</text>`;
+
+    for(let si=0;si<nStr;si++){
+      const y = tabStrY(tabTopY, si);
+      svg += `<line x1="${L.PAD_L}" y1="${y}" x2="${W-L.PAD_R}" y2="${y}"
+        stroke="${col.staff}" stroke-width="${si===0||si===nStr-1?0.9:0.6}"/>`;
+    }
+
+    // ── Barlines for this system ──
+    for(let m=0;m<=sysMeasureEnd-sysMeasureStart;m++){
+      const x = L.PAD_L + L.CLEF_W + m * beatsPerMeasure * L.BEAT_W;
+      const bw = m===0||m===sysMeasureEnd-sysMeasureStart?1.5:0.8;
+      svg += `<line x1="${x}" y1="${staffTopY}" x2="${x}"
+        y2="${staffTopY+staffH()}" stroke="${col.bar}" stroke-width="${bw}"/>`;
+      svg += `<line x1="${x}" y1="${tabTopY}" x2="${x}"
+        y2="${tabTopY+tabH(nStr)}" stroke="${col.bar}" stroke-width="${bw}"/>`;
+    }
+
+    // ── Notes in this system ──
+    const sysNotes = notes.filter(n=>n.beat>=sysBeatStart && n.beat<sysBeatEnd);
+
+    // Pre-pass: collect x positions
+    const noteX = (n) => {
+      const localBeat = n.beat - sysBeatStart;
+      return L.PAD_L + L.CLEF_W + localBeat * L.BEAT_W + L.BEAT_W/2;
+    };
+
+    sysNotes.forEach((n, ni) => {
+      const x      = noteX(n);
+      const dur    = n.dur||'s';
+      const filled = DUR_FILLED[dur];
+      const nFlags = DUR_FLAGS[dur];
+      const isActive = currentBeat>=n.beat && currentBeat<n.beat+(DUR_BEATS[dur]||0.25);
+      const noteColor = isActive ? col.hl : col.note;
+
+      // ── Staff note ──
+      const sp     = midiToStaffY(n.midi, staffTopY);
+      const stemUp = sp.y > staffTopY + staffH()/2;
+
+      svg += noteHead(x, sp.y, filled, noteColor, isActive);
+      if(dur!=='w'){
+        svg += stem(x, sp.y, stemUp, noteColor);
+        if(nFlags>0) svg += flags(x, sp.y, stemUp, nFlags, noteColor);
+      }
+      svg += ledgers(x, staffTopY, sp.y, col.note);
+
+      if(sp.isAccidental){
+        svg += `<text x="${x-11}" y="${sp.y+3.5}" font-size="10"
+          fill="${col.acc}" text-anchor="middle">${sp.acc}</text>`;
+      }
+
+      // ── Tab number ──
+      // si: 0=low string. Tab displays high string at top.
+      const dispSi = nStr-1-n.string;
+      const ty     = tabStrY(tabTopY, dispSi);
+      const fStr   = n.isMuted?'x':String(n.fret??0);
+      const fw     = fStr.length>1?13:9;
+      const techColor = getTechColor(n.technique, col);
+      const tabColor  = isActive ? col.hl : techColor;
+
+      svg += `<rect x="${x-fw/2-1}" y="${ty-6}" width="${fw+2}" height="12"
+        fill="${col.bg}" rx="1"/>`;
+      svg += `<text x="${x}" y="${ty+4}" font-size="${fStr.length>1?9:11}"
+        text-anchor="middle" font-weight="700" fill="${tabColor}">${fStr}</text>`;
+
+      // ── Technique over tab ──
+      if(n.technique){
+        svg += renderTech(n, x, ty, col);
+      }
+
+      // ── Pick direction below tab ──
+      if(n.pick==='down'||n.pick==='up'){
+        svg += `<text x="${x}" y="${tabTopY+tabH(nStr)+14}"
+          font-size="9" text-anchor="middle" fill="${col.dim}">${n.pick==='down'?'↓':'↑'}</text>`;
+      } else if(n.pick==='slap'){
+        svg += `<text x="${x}" y="${tabTopY+tabH(nStr)+14}"
+          font-size="8" text-anchor="middle" font-weight="700" fill="${col.slap}">S</text>`;
+      } else if(n.pick==='pop'){
+        svg += `<text x="${x}" y="${tabTopY+tabH(nStr)+14}"
+          font-size="8" text-anchor="middle" font-weight="700" fill="${col.pop}">P</text>`;
+      }
+    });
+
+    // ── H/P slurs ──
+    sysNotes.forEach((n, ni) => {
+      if(n.technique==='h'||n.technique==='p'){
+        const prev = sysNotes[ni-1];
+        if(!prev) return;
+        const x1  = noteX(prev);
+        const x2  = noteX(n);
+        const dispSi = nStr-1-n.string;
+        const ty  = tabStrY(tabTopY, dispSi);
+        svg += techArc(x1, x2, ty, n.technique, col.h);
+      }
+    });
   }
-
-  // ── Treble clef ──
-  svg += renderTrebleClef(L.PAD_L + 4, L.STAFF_TOP, C.clef);
-
-  // ── Time signature ──
-  const tsX = L.PAD_L + 28;
-  svg += `<text x="${tsX}" y="${L.STAFF_TOP + 10}" text-anchor="middle"
-    font-size="18" font-weight="900" fill="${C.note}">${timeSignature[0]}</text>`;
-  svg += `<text x="${tsX}" y="${L.STAFF_TOP + 26}" text-anchor="middle"
-    font-size="18" font-weight="900" fill="${C.note}">${timeSignature[1]}</text>`;
-
-  // ── Tab label ──
-  svg += `<text x="${L.PAD_L - 8}" y="${tabY(0, totalStrings) + 6}"
-    text-anchor="middle" font-size="18" font-weight="900" fill="${C.tab}">T</text>`;
-  svg += `<text x="${L.PAD_L - 8}" y="${tabY(1, totalStrings) + 6}"
-    text-anchor="middle" font-size="18" font-weight="900" fill="${C.tab}">A</text>`;
-  svg += `<text x="${L.PAD_L - 8}" y="${tabY(2, totalStrings) + 6}"
-    text-anchor="middle" font-size="18" font-weight="900" fill="${C.tab}">B</text>`;
-
-  // ── Tab lines ──
-  for (let si = 0; si < totalStrings; si++) {
-    const y = tabY(si, totalStrings);
-    svg += `<line x1="${L.PAD_L}" y1="${y}" x2="${totalW - L.PAD_R}" y2="${y}"
-      stroke="${C.staff}" stroke-width="${si===0||si===totalStrings-1?1.5:1}"/>`;
-  }
-
-  // ── Barlines ──
-  for (let m = 0; m <= measures; m++) {
-    const x = L.PAD_L + L.CLEF_W + m * timeSignature[0] * L.BEAT_W;
-    svg += `<line x1="${x}" y1="${lineY(0)}" x2="${x}" y2="${lineY(4)}"
-      stroke="${C.staff}" stroke-width="${m===0||m===measures?2:1}"/>`;
-    svg += `<line x1="${x}" y1="${tabY(0,totalStrings)}" x2="${x}" y2="${tabY(totalStrings-1,totalStrings)}"
-      stroke="${C.staff}" stroke-width="${m===0||m===measures?2:1}"/>`;
-  }
-
-  // ── Notes ──
-  const noteXMap = {};
-  notes.forEach((n, idx) => {
-    const x = beatToX(n.beat, timeSignature[0]);
-    noteXMap[idx] = x;
-
-    const isActive  = currentBeat >= n.beat && currentBeat < n.beat + DUR_BEATS[n.dur||'s'];
-    const fillColor = isActive ? '#f59e0b' : C.note;
-
-    // ── Staff note ──
-    const sp = midiToStaffPos(n.midi);
-    svg += renderStaffNote(x, sp, n.dur||'s', fillColor, C.note, isActive);
-
-    // ── Ledger lines ──
-    if (sp.pos < 0 || sp.pos > 4) {
-      const ledgerY = sp.y;
-      svg += `<line x1="${x-10}" y1="${ledgerY}" x2="${x+10}" y2="${ledgerY}"
-        stroke="${C.note}" stroke-width="1.2"/>`;
-    }
-
-    // ── Accidental ──
-    if (sp.isAccidental) {
-      svg += `<text x="${x-12}" y="${sp.y+4}" font-size="11" fill="${C.note}"
-        text-anchor="middle">${sp.accidental}</text>`;
-    }
-
-    // ── Tab number ──
-    const tabStringIdx = totalStrings - 1 - n.string; // flip: high e at top
-    const ty = tabY(tabStringIdx, totalStrings);
-    const techColor = getTechColor(n.technique, C);
-    const fretStr   = n.isMuted ? 'x' : String(n.fret ?? 0);
-    const fretW     = fretStr.length > 1 ? 14 : 10;
-
-    // White bg to cover string line
-    svg += `<rect x="${x-fretW/2}" y="${ty-7}" width="${fretW}" height="13"
-      fill="${C.bg}" rx="2"/>`;
-    svg += `<text x="${x}" y="${ty+4}" font-size="${fretStr.length>1?10:12}"
-      text-anchor="middle" font-weight="800"
-      fill="${isActive?'#f59e0b':techColor}">${fretStr}</text>`;
-
-    // ── Technique markers ──
-    if (n.technique) {
-      svg += renderTechniqueMarker(n, idx, notes, x, ty, C);
-    }
-
-    // ── Pick direction ──
-    if (n.pick === 'down' || n.pick === 'up') {
-      const arrow = n.pick === 'down' ? '↓' : '↑';
-      svg += `<text x="${x}" y="${L.TAB_TOP + totalStrings*L.TAB_GAP + 14}"
-        font-size="10" text-anchor="middle" fill="${C.dim}">${arrow}</text>`;
-    } else if (n.pick === 'slap') {
-      svg += `<text x="${x}" y="${L.TAB_TOP + totalStrings*L.TAB_GAP + 14}"
-        font-size="9" text-anchor="middle" font-weight="700" fill="${C.slap}">S</text>`;
-    } else if (n.pick === 'pop') {
-      svg += `<text x="${x}" y="${L.TAB_TOP + totalStrings*L.TAB_GAP + 14}"
-        font-size="9" text-anchor="middle" font-weight="700" fill="${C.pop}">P</text>`;
-    }
-
-    // ── Finger number ──
-    if (n.finger && n.finger !== 'T') {
-      svg += `<text x="${x}" y="${ty - 10}" font-size="8"
-        text-anchor="middle" fill="${C.dim}">${n.finger}</text>`;
-    }
-  });
-
-  // ── Slurs / ties for hammer-ons and pull-offs ──
-  notes.forEach((n, idx) => {
-    if (n.technique === 'h' || n.technique === 'p') {
-      const prev = notes[idx-1];
-      if (!prev) return;
-      const x1 = noteXMap[idx-1] || 0;
-      const x2 = noteXMap[idx]   || 0;
-      const tabStringIdx = totalStrings - 1 - n.string;
-      const ty  = tabY(tabStringIdx, totalStrings);
-      const arc = n.technique === 'h' ? -12 : 12;
-      const mx  = (x1 + x2) / 2;
-
-      svg += `<path d="M${x1} ${ty-8} Q${mx} ${ty-8+arc} ${x2} ${ty-8}"
-        fill="none" stroke="${C.tech}" stroke-width="1.2"/>`;
-      svg += `<text x="${mx}" y="${ty - 18}" font-size="9" text-anchor="middle"
-        fill="${C.tech}" font-weight="700">${n.technique}</text>`;
-    }
-  });
 
   svg += `</svg>`;
   return svg;
 }
 
-/* ── Technique marker renderer ──────────── */
-function renderTechniqueMarker(n, idx, notes, x, ty, C) {
-  let out = '';
-  switch(n.technique) {
+function renderTech(n, x, ty, col){
+  switch(n.technique){
     case 'sweep_d':
-      out += `<text x="${x}" y="${ty-12}" font-size="9" text-anchor="middle"
-        fill="${C.sweep}" font-weight="800">↓</text>`;
-      break;
+      return `<text x="${x}" y="${ty-9}" font-size="8" text-anchor="middle"
+        fill="${col.sweep}" font-weight="700">↓</text>`;
     case 'sweep_u':
-      out += `<text x="${x}" y="${ty-12}" font-size="9" text-anchor="middle"
-        fill="${C.sweep}" font-weight="800">↑</text>`;
-      break;
+      return `<text x="${x}" y="${ty-9}" font-size="8" text-anchor="middle"
+        fill="${col.sweep}" font-weight="700">↑</text>`;
     case 'tap':
-      out += `<circle cx="${x}" cy="${ty}" r="8" fill="none"
-        stroke="${C.tap}" stroke-width="1.5"/>`;
-      out += `<text x="${x}" y="${ty+4}" font-size="9" text-anchor="middle"
-        fill="${C.tap}" font-weight="800">T</text>`;
-      break;
+      return `<circle cx="${x}" cy="${ty}" r="7" fill="none"
+        stroke="${col.tap}" stroke-width="1.2"/>`;
     case 'b':
-      out += `<text x="${x+8}" y="${ty-12}" font-size="9"
-        fill="${C.tech}" font-weight="700">b</text>`;
-      out += `<path d="M${x} ${ty-8} Q${x+8} ${ty-16} ${x+6} ${ty-22}"
-        fill="none" stroke="${C.tech}" stroke-width="1.2"/>`;
-      break;
+      return `<text x="${x+7}" y="${ty-9}" font-size="8" fill="${col.h}">b</text>
+        <path d="M${x} ${ty-6} Q${x+7} ${ty-14} ${x+5} ${ty-20}"
+        fill="none" stroke="${col.h}" stroke-width="1"/>`;
     case '~':
-      out += `<path d="M${x-8} ${ty-10} Q${x-4} ${ty-14} ${x} ${ty-10}
-        Q${x+4} ${ty-6} ${x+8} ${ty-10}"
-        fill="none" stroke="${C.tech}" stroke-width="1.2"/>`;
-      break;
+      return `<path d="M${x-7} ${ty-9} Q${x-3} ${ty-13} ${x} ${ty-9}
+        Q${x+3} ${ty-5} ${x+7} ${ty-9}"
+        fill="none" stroke="${col.h}" stroke-width="1"/>`;
     case 'slap':
-      out += `<text x="${x}" y="${ty-12}" font-size="9" text-anchor="middle"
-        fill="${C.slap}" font-weight="800">S</text>`;
-      break;
+      return `<text x="${x}" y="${ty-9}" font-size="8" text-anchor="middle"
+        fill="${col.slap}" font-weight="700">S</text>`;
     case 'pop':
-      out += `<text x="${x}" y="${ty-12}" font-size="9" text-anchor="middle"
-        fill="${C.pop}" font-weight="800">P</text>`;
-      break;
+      return `<text x="${x}" y="${ty-9}" font-size="8" text-anchor="middle"
+        fill="${col.pop}" font-weight="700">P</text>`;
     case 'pm':
-      out += `<text x="${x}" y="${ty-12}" font-size="8" text-anchor="middle"
-        fill="${C.dim}">PM</text>`;
-      break;
+      return `<text x="${x}" y="${ty-9}" font-size="7" text-anchor="middle"
+        fill="${col.dim}">PM</text>`;
+    default: return '';
   }
-  return out;
 }
 
-/* ── Staff note renderer ─────────────────── */
-function renderStaffNote(x, sp, dur, fill, stroke, isActive) {
-  const filled = DUR_FILLED[dur];
-  const flags  = DUR_FLAGS[dur];
-  const stemUp = sp.pos >= 2; // stem direction
-  let out = '';
-
-  // Note head
-  if (dur === 'w') {
-    out += `<ellipse cx="${x}" cy="${sp.y}" rx="7" ry="5"
-      fill="none" stroke="${fill}" stroke-width="1.5"/>`;
-  } else {
-    out += `<ellipse cx="${x}" cy="${sp.y}" rx="${L.NOTE_R}" ry="4.5"
-      fill="${filled?fill:'none'}" stroke="${stroke}" stroke-width="1.2"
-      transform="rotate(-15,${x},${sp.y})"/>`;
-  }
-
-  // Stem
-  if (dur !== 'w') {
-    const stemY1 = stemUp ? sp.y - 28 : sp.y + 28;
-    const stemY2 = sp.y + (stemUp ? -2 : 2);
-    out += `<line x1="${x+(stemUp?4:-4)}" y1="${stemY1}"
-      x2="${x+(stemUp?4:-4)}" y2="${stemY2}"
-      stroke="${stroke}" stroke-width="1.2"/>`;
-
-    // Flags
-    for (let f = 0; f < flags; f++) {
-      const fy = stemUp ? stemY1 + f*6 : stemY1 - f*6;
-      const dir = stemUp ? 1 : -1;
-      out += `<path d="M${x+(stemUp?4:-4)} ${fy} Q${x+16} ${fy+8*dir} ${x+12} ${fy+16*dir}"
-        fill="none" stroke="${stroke}" stroke-width="1.5"/>`;
-    }
-  }
-
-  return out;
+function getTechColor(tech, col){
+  if(!tech) return col.tab;
+  if(tech==='h'||tech==='p'||tech==='b'||tech==='~') return col.h;
+  if(tech==='sweep_d'||tech==='sweep_u') return col.sweep;
+  if(tech==='tap') return col.tap;
+  if(tech==='slap') return col.slap;
+  if(tech==='pop') return col.pop;
+  return col.tab;
 }
 
-/* ── Treble clef SVG path ────────────────── */
-function renderTrebleClef(x, y, color) {
-  // Simplified treble clef using path
-  return `<text x="${x}" y="${y + 28}" font-size="48" fill="${color}"
-    font-family="serif" opacity="0.8">𝄞</text>`;
+function emptyStaff(theme, title){
+  const col = C(theme);
+  return `<svg viewBox="0 0 600 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="600" height="100" fill="${col.bg}"/>
+    <text x="300" y="55" text-anchor="middle" font-size="13"
+      fill="${col.dim}">${title||'Selecciona un ejercicio'}</text>
+  </svg>`;
 }
 
-/* ── Beat to X coordinate ────────────────── */
-function beatToX(beat, beatsPerMeasure) {
-  const measure   = Math.floor(beat / beatsPerMeasure);
-  const beatInMsr = beat % beatsPerMeasure;
-  return L.PAD_L + L.CLEF_W + measure * beatsPerMeasure * L.BEAT_W + beatInMsr * L.BEAT_W + L.BEAT_W/2;
+export function beatToX(beat, beatsPerMeasure=4){
+  const m = Math.floor(beat/beatsPerMeasure);
+  const b = beat%beatsPerMeasure;
+  return L.PAD_L + L.CLEF_W + m*beatsPerMeasure*L.BEAT_W + b*L.BEAT_W + L.BEAT_W/2;
 }
-
-/* ── Tech color ──────────────────────────── */
-function getTechColor(tech, C) {
-  if (!tech) return C.tab;
-  if (tech === 'h' || tech === 'p' || tech === 'b' || tech === '~') return C.tech;
-  if (tech === 'sweep_d' || tech === 'sweep_u') return C.sweep;
-  if (tech === 'tap') return C.tap;
-  if (tech === 'slap') return C.slap;
-  if (tech === 'pop') return C.pop;
-  if (tech === 'pm') return C.dim;
-  return C.tab;
-}
-
-/* ── Export beat-to-X for player sync ────── */
-export { beatToX, DUR_BEATS };
