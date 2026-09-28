@@ -266,10 +266,14 @@ function renderExerciseArea() {
 }
 
 function buildMsEmbed(url){
-  const embedUrl=url.includes('/embed')?url:url.replace(/\/?$/,'')+'/embed';
+  // Strip query params and trailing slashes, then add /embed
+  let clean = url.split('?')[0].split('#')[0].replace(/\/+$/, '');
+  // Remove /embed if already there to avoid duplication
+  clean = clean.replace(/\/embed$/, '');
+  const embedUrl = clean + '/embed';
   return `<iframe src="${embedUrl}" width="100%" height="480" frameborder="0"
     allowfullscreen allow="autoplay; fullscreen"
-    style="border-radius:8px;display:block"></iframe>`;
+    style="border-radius:8px;display:block;border:none"></iframe>`;
 }
 
 function buildUploadSlot(exId){
