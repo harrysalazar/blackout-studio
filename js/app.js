@@ -221,11 +221,11 @@ function renderExerciseArea() {
         <div class="ms-input-label">📎 URL del score en MuseScore.com</div>
         <div class="ms-input-group">
           <input type="url" class="ms-url-input" id="msUrlInput"
-            placeholder="https://musescore.com/user/tu-usuario/scores/tu-score"
+            placeholder="https://musescore.com/... o &lt;iframe src=...&gt;"
             value="${savedUrl}"/>
           <button class="ms-embed-btn" id="msEmbedBtn">Cargar</button>
         </div>
-        <div class="ms-input-hint">Importa el MusicXML a MuseScore → edita → sube a musescore.com → pega el link aquí</div>
+        <div class="ms-input-hint">Pega el link de musescore.com O el código de incrustación (iframe) que genera MuseScore</div>
       </div>
 
       <div class="ms-embed-area" id="msEmbedArea">
@@ -265,15 +265,23 @@ function renderExerciseArea() {
   });
 }
 
-function buildMsEmbed(url){
-  // Strip query params and trailing slashes, then add /embed
-  let clean = url.split('?')[0].split('#')[0].replace(/\/+$/, '');
-  // Remove /embed if already there to avoid duplication
-  clean = clean.replace(/\/embed$/, '');
-  const embedUrl = clean + '/embed';
+function buildMsEmbed(input){
+  // Handle full iframe embed code OR plain URL
+  let embedUrl = '';
+  if(input.includes('<iframe')){
+    // Extract src from iframe tag
+    const match = input.match(/src=["']([^"']+)["']/);
+    embedUrl = match ? match[1] : '';
+  } else {
+    // Plain URL — strip query params and add /embed
+    let clean = input.split('?')[0].split('#')[0].replace(/\/+$/, '');
+    clean = clean.replace(/\/embed$/, '');
+    embedUrl = clean + '/embed';
+  }
+  if(!embedUrl) return '<div style="padding:20px;color:var(--cd)">URL no válida</div>';
   return `<iframe src="${embedUrl}" width="100%" height="480" frameborder="0"
     allowfullscreen allow="autoplay; fullscreen"
-    style="border-radius:8px;display:block;border:none"></iframe>`;
+    style="border-radius:8px;display:block;border:none;background:#1a1a2e"></iframe>`;
 }
 
 function buildUploadSlot(exId){
@@ -549,5 +557,13 @@ export function init() {
   renderStrings();
   renderTuning();
   renderRoot();
+  // Pre-load working embeds
+  const preloaded = {
+    'major_A_thirds': 'https://musescore.com/user/58004041/scores/38240744/embed',
+  };
+  Object.entries(preloaded).forEach(([k,v])=>{
+    if(!sessionStorage.getItem('ms_'+k.replace('_','_').split('_').slice(1).join('_')))
+      sessionStorage.setItem(`ms_major_A_thirds`, v);
+  });
   renderAll();
 }
