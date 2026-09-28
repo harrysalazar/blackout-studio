@@ -8,12 +8,7 @@ import { SCALES, ROOT_LABELS, ROOT_VALS, DEG_COLORS, DEG_EXPLAINED,
 import { INSTRUMENTS, CHROMATIC, OCTAVES, midiToNote, noteToMidi,
          getStringMidis, getDefaultCustom, getStringNames } from './tuning.js';
 import { renderFretboard } from './fretboard.js';
-import { buildExercise } from './exercises.js';
-import { renderNotation, DUR_BEATS } from './notation.js';
-import { initAudio, isLoaded, isLoading, switchInstrument } from './soundfont.js';
-import { playerPlay, playerStop, playerPause, playerSetBpm,
-         playerSetLoop, playerSetMetronome, playerOnBeatChange,
-         playerIsPlaying, playerCurrentBeat, playerBpm } from './player.js';
+
 
 /* ── State ───────────────────────────────── */
 const ST = {
@@ -21,9 +16,7 @@ const ST = {
   tuningKey:'standard', customMidis:null,
   scale:'major', root:'A',
   activePos:'all', activeTab:0, fbMode:'notes',
-  bpm: 80, loop: true, metronome: true,
-  currentExercise: 'thirds',
-  audioReady: false,
+  bpm: 80, currentExercise: 'thirds',
 };
 
 /* ── Derived ─────────────────────────────── */
@@ -60,7 +53,7 @@ document.querySelectorAll('.inst-btn').forEach(b => b.addEventListener('click', 
   ST.customMidis = null; ST.activePos = 'all';
   document.querySelectorAll('.inst-btn').forEach(x => x.classList.toggle('active', x === b));
   renderStrings(); renderTuning(); renderAll();
-  if (ST.audioReady) switchInstrument(ST.instrument);
+
 }));
 
 /* ── Strings ─────────────────────────────── */
@@ -153,189 +146,153 @@ function renderFBOnly() {
   });
 }
 
-/* ── Exercise area ───────────────────────── */
+/* ── Exercise area — MuseScore embeds ────── */
 function renderExerciseArea() {
   const container = document.getElementById('exerciseContainer');
-  if (!container) return;
-
-  const midis    = currentMidis();
-  const rMidi    = rootMidi();
-  const s        = SCALES[ST.scale];
+  if(!container) return;
   const isGuitar = ST.instrument === 'guitar';
 
   const exercises = isGuitar ? [
-    { id:'thirds',    label:'① Terceras Diatónicas',        desc:'Calentamiento armónico — todas las cuerdas' },
-    { id:'3nps',      label:'② 3NPS Posición Completa',     desc:'Ascendente + descendente + no lineal' },
-    { id:'seq3',      label:'③ Secuencia de 3',             desc:'1-2-3 / 2-3-4 cruzando cuerdas' },
-    { id:'seq4',      label:'④ Secuencia de 4 · Semicorch.', desc:'Grupos de 4 — todo el mástil 0-12' },
-    { id:'seq6',      label:'⑤ Secuencia de 6 · Shred',     desc:'Legato + púa alternada combinados' },
-    { id:'sweep',     label:'⑥ Sweep Picking 2-3-4-5-6c',   desc:'Neoclásico — todas las formas de barrido' },
-    { id:'tapping',   label:'⑦ Tapping Diatónico',          desc:'10as y 12as — extensiones imposibles' },
-    { id:'targeting', label:'⑧ Targeting · Chord Tones',    desc:'Aterrizaje forzoso en tiempos fuertes' },
+    { id:'thirds',    label:'① Terceras Diatónicas',
+      desc:'Dos notas separadas por una tercera diatónica, todas las cuerdas. Púa alternada estricta ↓↑. El calentamiento fundamental.',
+      bpm:'60–80', tech:'Púa alternada' },
+    { id:'3nps',      label:'② 3NPS Posición Completa',
+      desc:'Escala completa 3 notas por cuerda. Ascendente ↓↑↓, descendente ↑↓↑, luego sube 2 cuerdas y baja 1.',
+      bpm:'60→120', tech:'Púa ↓↑↓ por cuerda' },
+    { id:'seq3',      label:'③ Secuencia de 3',
+      desc:'Patrón 1-2-3, 2-3-4, 3-4-5... Tresillos cruzando cuerdas. Ascendente y descendente.',
+      bpm:'60–100', tech:'Tresillos · Alt. picking' },
+    { id:'seq4',      label:'④ Secuencia de 4',
+      desc:'Grupos de 4 notas en semicorcheas. Patrón no lineal: sube 4, baja 2. Toda la posición.',
+      bpm:'60–120', tech:'↓↑↓↑ por grupo' },
+    { id:'seq6',      label:'⑤ Secuencia de 6 · Shred',
+      desc:'Patrón 1-2-3-2-1-2 con púa alternada. Variante legato: solo se púa la primera nota de cada 6.',
+      bpm:'50–140', tech:'Alt. picking + Legato' },
+    { id:'sweep',     label:'⑥ Sweep Picking 2-3-4-5-6c',
+      desc:'Arpegios de tétrada en barrido sobre I, IV, V. Sweep neoclásico ↓↓↓ sube / ↑↑↑ baja + hammer-on en cima.',
+      bpm:'50–80', tech:'Sweep + h-p' },
+    { id:'tapping',   label:'⑦ Tapping Diatónico',
+      desc:'Mano izquierda trastes 5-9 (dedos 1 y 3). Tap mano derecha trastes 12-17. Intervalos de 10ª y 12ª. Patrón: ↓ h T p.',
+      bpm:'70–100', tech:'↓ h T p' },
+    { id:'targeting', label:'⑧ Targeting · Chord Tones',
+      desc:'Frase libre sobre i–IV–V–i. OBLIGATORIO: chord tone (raíz, 3ra o 5ta) en beat 1 y beat 3 de cada compás. El ejercicio más importante.',
+      bpm:'80–120', tech:'Libre — chord tones en beats fuertes' },
   ] : [
-    { id:'thirds',    label:'① Línea Diatónica',            desc:'Fingerstyle — movimiento melódico' },
-    { id:'3nps',      label:'② Posición Completa',          desc:'Mástil completo en bajo' },
-    { id:'seq3',      label:'③ Secuencia de 3',             desc:'Grupos de tres notas' },
-    { id:'seq4',      label:'④ Secuencia de 4',             desc:'Groove en semicorcheas' },
-    { id:'walking',   label:'⑤ Walking Bass',               desc:'Root-3rd-5th-approach diatónico' },
-    { id:'slap',      label:'⑥ Slap + Pop',                 desc:'S-P-ghost sobre estructura diatónica' },
-    { id:'tapping',   label:'⑦ Thumb Tapping',              desc:'Extensiones en el bajo' },
-    { id:'targeting', label:'⑧ Targeting',                  desc:'Chord tones en tiempo fuerte' },
+    { id:'walking',   label:'① Walking Bass',
+      desc:'Root beat 1, 3ra beat 2, 5ta beat 3, aproximación cromática beat 4. Sobre I–IV–V–I.',
+      bpm:'80–120', tech:'Fingerstyle' },
+    { id:'slap',      label:'② Slap + Pop',
+      desc:'S en raíz, S en octava, P en quinta, ghost muted. Estructura diatónica.',
+      bpm:'90–120', tech:'Slap · Pop · Ghost' },
+    { id:'thirds',    label:'③ Línea Diatónica',
+      desc:'Terceras diatónicas en movimiento melódico por el mástil.',
+      bpm:'60–90', tech:'Fingerstyle' },
+    { id:'seq4',      label:'④ Groove Semicorcheas',
+      desc:'Grupos de 4 notas. Groove preciso, desplazamiento de posición.',
+      bpm:'70–100', tech:'Fingerstyle' },
+    { id:'targeting', label:'⑤ Targeting',
+      desc:'Chord tones en tiempo fuerte sobre progresión real.',
+      bpm:'80–120', tech:'Libre' },
+    { id:'tapping',   label:'⑥ Thumb Tapping',
+      desc:'Pulgar en raíz (bajo), tap índice derecho en octava/quinta alta.',
+      bpm:'60–90', tech:'Pulgar + Tap' },
   ];
 
-  // Generate current exercise notes
-  let notes = [];
-  try {
-    notes = buildExercise(ST.currentExercise, rMidi, ST.scale, midis, ST.instrument, ST.strings);
-  } catch(e) { console.error('Exercise generation failed:', e); }
-
-  const notation = renderNotation({
-    notes, stringMidis: midis, instrument: ST.instrument,
-    theme: ST.theme, currentBeat: playerCurrentBeat(),
-    title: exercises.find(e=>e.id===ST.currentExercise)?.label || '',
-  });
+  const activeEx = exercises.find(e=>e.id===ST.currentExercise)||exercises[0];
+  const savedUrl = sessionStorage.getItem(`ms_${ST.scale}_${ST.root}_${ST.currentExercise}`)||'';
 
   container.innerHTML = `
-    <!-- Exercise selector -->
-    <div class="ex-selector">
-      ${exercises.map(ex => `
-        <button class="ex-sel-btn${ex.id===ST.currentExercise?' active':''}"
-          data-ex="${ex.id}">
-          <span class="ex-sel-label">${ex.label}</span>
-          <span class="ex-sel-desc">${ex.desc}</span>
-        </button>`).join('')}
+    <div class="ex-tabs">
+      ${exercises.map(ex=>`
+        <button class="ex-tab-btn${ex.id===ST.currentExercise?' active':''}"
+          data-ex="${ex.id}">${ex.label}</button>`).join('')}
     </div>
 
-    <!-- Player controls -->
-    <div class="player-bar">
-      <div class="player-controls">
-        <button class="player-btn" id="btnPlay" title="Play / Pausa">
-          ${playerIsPlaying() ? '⏸' : '▶'}
-        </button>
-        <button class="player-btn" id="btnStop" title="Stop">⏹</button>
+    <div class="ex-panel">
+      <div class="ex-panel-header">
+        <div class="ex-panel-meta">
+          <span class="bdg bdg-mode">BPM: ${activeEx.bpm}</span>
+          <span class="bdg bdg-key">${activeEx.tech}</span>
+        </div>
+        <div class="ex-panel-desc">${activeEx.desc}</div>
       </div>
 
-      <div class="player-bpm">
-        <span class="player-bpm-label">BPM</span>
-        <input type="range" id="bpmSlider" min="20" max="240"
-          value="${ST.bpm}" class="bpm-slider"/>
-        <span class="player-bpm-val" id="bpmVal">${ST.bpm}</span>
+      <div class="ms-input-row">
+        <div class="ms-input-label">📎 URL del score en MuseScore.com</div>
+        <div class="ms-input-group">
+          <input type="url" class="ms-url-input" id="msUrlInput"
+            placeholder="https://musescore.com/user/tu-usuario/scores/tu-score"
+            value="${savedUrl}"/>
+          <button class="ms-embed-btn" id="msEmbedBtn">Cargar</button>
+        </div>
+        <div class="ms-input-hint">Importa el MusicXML a MuseScore → edita → sube a musescore.com → pega el link aquí</div>
       </div>
 
-      <div class="player-toggles">
-        <button class="player-toggle${ST.loop?' active':''}" id="btnLoop"
-          title="Loop">🔁</button>
-        <button class="player-toggle${ST.metronome?' active':''}" id="btnMetronome"
-          title="Metrónomo">🥁</button>
+      <div class="ms-embed-area" id="msEmbedArea">
+        ${savedUrl ? buildMsEmbed(savedUrl) : buildUploadSlot(ST.currentExercise)}
       </div>
 
-      <div class="player-status" id="playerStatus">
-        ${ST.audioReady
-          ? '<span class="status-ready">● Listo</span>'
-          : '<button class="player-load-btn" id="btnLoadAudio">🎵 Cargar Audio</button>'}
+      <div class="bpm-ref-bar">
+        <span class="bpm-ref-label">Referencia BPM</span>
+        <input type="range" class="bpm-slider" id="bpmRef" min="20" max="240" value="${ST.bpm}"/>
+        <span class="bpm-ref-val" id="bpmRefVal">${ST.bpm}</span>
+        <span class="bpm-ref-hint">Empieza lento, sube cuando el patrón esté limpio</span>
       </div>
-    </div>
-
-    <!-- Notation -->
-    <div class="notation-wrap">
-      <div class="notation-scroll" id="notationSVG">
-        ${notation}
-      </div>
-    </div>
-
-    <!-- Legend -->
-    <div class="notation-legend">
-      <span>↓↑ Púa alternada</span>
-      <span class="leg-h">h Hammer-on</span>
-      <span class="leg-p">p Pull-off</span>
-      <span class="leg-s">↓↓↓ Sweep</span>
-      <span class="leg-t">T Tap</span>
-      <span class="leg-b">b Bend</span>
-      <span class="leg-v">~ Vibrato</span>
-      <span class="leg-sl">S Slap</span>
-      <span class="leg-po">P Pop</span>
-      <span class="leg-pm">PM Palm mute</span>
     </div>`;
 
-  // Bind exercise selector
-  container.querySelectorAll('.ex-sel-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      ST.currentExercise = btn.dataset.ex;
-      playerStop();
-      renderExerciseArea();
-    });
+  container.querySelectorAll('.ex-tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{ ST.currentExercise=btn.dataset.ex; renderExerciseArea(); });
   });
 
-  // Bind player buttons
-  document.getElementById('btnPlay')?.addEventListener('click', async () => {
-    if (!ST.audioReady) {
-      await loadAudio();
-    }
-    if (!ST.audioReady) return;
-    if (playerIsPlaying()) {
-      playerPause();
-    } else {
-      const notes = buildExercise(ST.currentExercise, rootMidi(), ST.scale, currentMidis(), ST.instrument, ST.strings);
-      playerPlay(notes, currentMidis(), ST.bpm);
-    }
-    document.getElementById('btnPlay').textContent = playerIsPlaying() ? '⏸' : '▶';
+  document.getElementById('msEmbedBtn')?.addEventListener('click',()=>{
+    const url=(document.getElementById('msUrlInput')?.value||'').trim();
+    if(!url) return;
+    sessionStorage.setItem(`ms_${ST.scale}_${ST.root}_${ST.currentExercise}`,url);
+    document.getElementById('msEmbedArea').innerHTML=buildMsEmbed(url);
   });
 
-  document.getElementById('btnStop')?.addEventListener('click', () => {
-    playerStop();
-    document.getElementById('btnPlay').textContent = '▶';
-    renderExerciseArea();
+  document.getElementById('msUrlInput')?.addEventListener('keydown',e=>{
+    if(e.key==='Enter') document.getElementById('msEmbedBtn')?.click();
   });
 
-  document.getElementById('bpmSlider')?.addEventListener('input', e => {
-    ST.bpm = parseInt(e.target.value);
-    document.getElementById('bpmVal').textContent = ST.bpm;
-    playerSetBpm(ST.bpm);
+  document.getElementById('bpmRef')?.addEventListener('input',e=>{
+    ST.bpm=parseInt(e.target.value);
+    document.getElementById('bpmRefVal').textContent=ST.bpm;
   });
 
-  document.getElementById('btnLoop')?.addEventListener('click', () => {
-    ST.loop = !ST.loop;
-    playerSetLoop(ST.loop);
-    document.getElementById('btnLoop').classList.toggle('active', ST.loop);
+  container.querySelectorAll('.ms-img-input').forEach(inp=>{
+    inp.addEventListener('change',e=>loadImg(e.target,e.target.dataset.target));
   });
-
-  document.getElementById('btnMetronome')?.addEventListener('click', () => {
-    ST.metronome = !ST.metronome;
-    playerSetMetronome(ST.metronome);
-    document.getElementById('btnMetronome').classList.toggle('active', ST.metronome);
-  });
-
-  document.getElementById('btnLoadAudio')?.addEventListener('click', loadAudio);
 }
 
-/* ── Load audio ──────────────────────────── */
-async function loadAudio() {
-  const statusEl = document.getElementById('playerStatus');
-  if (statusEl) statusEl.innerHTML = '<span class="status-loading">⏳ Cargando samples...</span>';
-  const ok = await initAudio(ST.instrument);
-  ST.audioReady = ok;
-  if (statusEl) {
-    statusEl.innerHTML = ok
-      ? '<span class="status-ready">● Listo</span>'
-      : '<span class="status-error">✗ Error — verifica conexión</span>';
-  }
-  if (ok) {
-    // Set up beat sync for notation highlight
-    playerOnBeatChange(beat => {
-      const svg = document.getElementById('notationSVG');
-      if (!svg) return;
-      const notes = buildExercise(ST.currentExercise, rootMidi(), ST.scale, currentMidis(), ST.instrument, ST.strings);
-      svg.innerHTML = renderNotation({
-        notes, stringMidis: currentMidis(), instrument: ST.instrument,
-        theme: ST.theme, currentBeat: beat,
-        title: ST.currentExercise,
-      });
-    });
-    playerOnEnd(() => {
-      document.getElementById('btnPlay')?.textContent === '▶';
-    });
-  }
-  return ok;
+function buildMsEmbed(url){
+  const embedUrl=url.includes('/embed')?url:url.replace(/\/?$/,'')+'/embed';
+  return `<iframe src="${embedUrl}" width="100%" height="480" frameborder="0"
+    allowfullscreen allow="autoplay; fullscreen"
+    style="border-radius:8px;display:block"></iframe>`;
+}
+
+function buildUploadSlot(exId){
+  return `<div class="ms-upload-area">
+    <div class="ms-upload-icon">🎼</div>
+    <div class="ms-upload-title">Sube el score a MuseScore.com y pega el link arriba</div>
+    <div class="ms-upload-sub">O exporta como imagen desde MuseScore y súbela aquí</div>
+    <label class="ms-img-label">
+      <input type="file" class="ms-img-input" accept="image/*" data-target="ms-img-${exId}"/>
+      📸 Subir imagen (PNG/JPG)
+    </label>
+    <div id="ms-img-${exId}" style="margin-top:10px"></div>
+  </div>`;
+}
+
+function loadImg(inp,targetId){
+  if(!inp.files||!inp.files[0])return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const el=document.getElementById(targetId);
+    if(el) el.innerHTML=`<img src="${e.target.result}" style="width:100%;border-radius:8px"/>`;
+  };
+  r.readAsDataURL(inp.files[0]);
 }
 
 /* ── Interval + chord grid helpers ───────── */
