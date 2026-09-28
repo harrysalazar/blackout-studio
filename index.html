@@ -216,6 +216,42 @@ select,input{font-family:inherit}
   .cg{grid-template-columns:1fr}
   .tb-title{font-size:.9rem}
 }
+
+/* PLAYER */
+.player-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--bd1);border-radius:var(--r3);padding:14px 18px;margin-bottom:16px}
+.player-controls{display:flex;gap:8px}
+.player-btn{width:40px;height:40px;border-radius:var(--r2);background:var(--bp);color:#fff;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:all var(--ta);border:none;cursor:pointer}
+.player-btn:hover{background:#6d28d9;transform:scale(1.05)}
+.player-bpm{display:flex;align-items:center;gap:10px;flex:1;min-width:160px}
+.player-bpm-label{font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);white-space:nowrap}
+.bpm-slider{flex:1;accent-color:var(--bp);cursor:pointer;height:4px}
+.player-bpm-val{font-size:1rem;font-weight:800;color:var(--bs);min-width:36px;text-align:right}
+.player-toggles{display:flex;gap:6px}
+.player-toggle{width:36px;height:36px;border-radius:var(--r2);border:1px solid var(--bd2);background:var(--bg2);font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all var(--ta);cursor:pointer}
+.player-toggle.active{background:rgba(124,58,237,.2);border-color:var(--bp)}
+.player-status{font-size:.75rem;font-weight:600}
+.status-ready{color:var(--cs)}
+.status-loading{color:var(--cw)}
+.status-error{color:var(--cd)}
+.player-load-btn{padding:8px 14px;border-radius:var(--r2);background:var(--bp);color:#fff;font-size:.78rem;font-weight:700;border:none;cursor:pointer;transition:all var(--ta)}
+.player-load-btn:hover{background:#6d28d9}
+/* NOTATION */
+.notation-wrap{background:var(--bg1);border:1px solid var(--bd1);border-radius:var(--r3);overflow:hidden;margin-bottom:16px}
+.notation-scroll{overflow-x:auto;padding:12px}
+.notation-scroll::-webkit-scrollbar{height:4px}
+.notation-scroll::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px}
+.notation-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.68rem;font-weight:600;color:var(--t3);padding:0 4px;margin-bottom:16px}
+.leg-h{color:#06b6d4}.leg-p{color:#06b6d4}.leg-s{color:#7c3aed}
+.leg-t{color:#ec4899}.leg-b{color:#06b6d4}.leg-v{color:#06b6d4}
+.leg-sl{color:#f59e0b}.leg-po{color:#10b981}.leg-pm{color:var(--t3)}
+/* EXERCISE SELECTOR */
+.ex-selector{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:16px}
+.ex-sel-btn{background:var(--bg2);border:1px solid var(--bd1);border-radius:var(--r2);padding:10px 14px;text-align:left;cursor:pointer;transition:all var(--ta);display:flex;flex-direction:column;gap:2px}
+.ex-sel-btn:hover{border-color:var(--bp)}
+.ex-sel-btn.active{background:rgba(124,58,237,.15);border-color:var(--bp)}
+.ex-sel-label{font-size:.75rem;font-weight:700;color:var(--t1)}
+.ex-sel-desc{font-size:.65rem;color:var(--t3)}
+
 </style>
 </head>
 <body>
@@ -228,7 +264,7 @@ select,input{font-family:inherit}
     </div>
   </div>
   <div class="tb-right">
-    <span class="tb-badge" id="versionBadge">v2.7</span>
+    <span class="tb-badge" id="versionBadge">v3.0</span>
     <button class="theme-btn" id="themeBtn" title="Cambiar tema">🌙</button>
   </div>
 </header>
@@ -279,519 +315,9 @@ select,input{font-family:inherit}
   </div>
   <div id="scaleContent"></div>
 </main>
-<script>
-// ═══════ DATA ═══════
-const NS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const NF=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
-const USE_FLAT=new Set(['F','Bb','Eb','Ab','Db','Gb']);
-const ROOT_LABELS=['C','C#/Db','D','D#/Eb','E','F','F#/Gb','G','G#/Ab','A','A#/Bb','B'];
-const ROOT_VALS=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
-const DEG_CLR=['#7c3aed','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#a78bfa','#64748b'];
-const CHROMATIC=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const OCTAVES=[0,1,2,3,4,5,6];
-
-const DEG_EXPLAINED={
-  'I':{quality:'Mayor',why:'Mayúscula = acorde mayor. Tónica.'},
-  'II':{quality:'Mayor',why:'Mayúscula = acorde mayor.'},
-  'III':{quality:'Mayor',why:'Mayúscula = acorde mayor.'},
-  'IV':{quality:'Mayor',why:'Mayúscula = acorde mayor. Subdominante.'},
-  'V':{quality:'Dominante',why:'Mayúscula + 7 = dominante — máxima tensión.'},
-  'VI':{quality:'Mayor',why:'Mayúscula = acorde mayor.'},
-  'VII':{quality:'Mayor',why:'Mayúscula = acorde mayor.'},
-  'i':{quality:'Menor',why:'Minúscula = acorde menor. Tónica menor.'},
-  'ii':{quality:'Menor',why:'Minúscula = acorde menor.'},
-  'iii':{quality:'Menor',why:'Minúscula = acorde menor.'},
-  'iv':{quality:'Menor',why:'Minúscula = acorde menor. Subdominante menor.'},
-  'v':{quality:'Menor',why:'Minúscula = menor. Sin tensión dominante.'},
-  'vi':{quality:'Menor',why:'Minúscula = acorde menor. Relativo menor.'},
-  'vii':{quality:'Menor',why:'Minúscula = acorde menor.'},
-  'ii°':{quality:'Semidisminuido',why:'° = disminuido. Minúscula = base menor.'},
-  'vi°':{quality:'Semidisminuido',why:'° = disminuido.'},
-  'v°':{quality:'Semidisminuido',why:'° = disminuido.'},
-  'i°':{quality:'Semidisminuido',why:'° = disminuido. Solo en Locrio.'},
-  'VII°':{quality:'Disminuido',why:'° = disminuido completo.'},
-  '#IV':{quality:'Mayor',why:'# = alterado. La nota del Lidio.'},
-  'bII':{quality:'Mayor',why:'b = bemol (un semitono abajo). El movimiento Frigio.'},
-  'bIII':{quality:'Mayor',why:'b = bemol. 3ra menor en contexto mayor.'},
-  'bVI':{quality:'Mayor',why:'b = bemol. 6ta menor, muy usada en rock.'},
-  'bVII':{quality:'Mayor/Dom',why:'b = bemol. El acorde de rock por excelencia.'},
-  'bV':{quality:'Mayor',why:'b = bemol. 5ta disminuida — el tritono.'},
-  'bvii':{quality:'Menor',why:'Minúscula + b = menor bemol.'},
-};
-
-const SCALES={
-  major:{name:'Mayor',mode:'Jónico — Modo I de la Escala Mayor',intervals:[2,2,1,2,2,2,1],formula:['T','T','S','T','T','T','S'],degs:['I','II','III','IV','V','VI','VII'],ct:['Maj7','m7','m7','Maj7','7','m7','m7b5'],cf:['Mayor 7ma mayor','Menor 7ma menor','Menor 7ma menor','Mayor 7ma mayor','Dominante 7','Menor 7ma menor','Semidisminuido'],cn:[[0,4,7,11],[2,5,9,0],[4,7,11,2],[5,9,0,4],[7,11,2,5],[9,0,4,7],[11,2,5,9]],origin:'Imagina 7 escalones con distancias exactas: Tono, Tono, Semitono, Tono, Tono, Tono, Semitono. Si subes esos escalones desde cualquier nota, tocaste una escala mayor. Todo en la música tonal parte de aquí.',sound:'Alegre, brillante, estable. El oído siente que llegó cuando resuelve en la tónica.',apply:'Sobre acordes Maj7 y progresiones mayores. Pop, Rock clásico, Country, Folk.',bassApply:'Líneas de bajo mayores sobre I–IV–V. Walking bass diatónico.',nps3:'La Posición 1 empieza en la raíz en la 6ª cuerda.',progs:[{name:'I–V–vi–IV · La Progresión del Pop',degs:[0,4,5,3],why:'La más usada en pop moderno. I da estabilidad, V tensión, vi color melancólico, IV respira.',genre:'Pop · Rock · Country'},{name:'I–IV–V · Blues Mayor',degs:[0,3,4],why:'Los tres acordes fundamentales. I es home, IV eleva suavemente, V lleva al máximo.',genre:'Blues · Rock · Country'},{name:'ii–V–I · Cadencia Jazz',degs:[1,4,0],why:'La cadencia reina del jazz. ii7 prepara, V7 crea tensión con su tritono, I resuelve.',genre:'Jazz · Bossa Nova · Fusion'},{name:'I–vi–IV–V · Doo-Wop',degs:[0,5,3,4],why:'El vi añade sabor menor que contrasta con el brillo del I.',genre:'Pop clásico · Rock 50s'}]},
-  dorian:{name:'Dórico',mode:'Modo II — 2° grado de la Escala Mayor',intervals:[2,1,2,2,2,1,2],formula:['T','S','T','T','T','S','T'],degs:['i','ii°','bIII','IV','v','vi','bVII'],ct:['m7','m7b5','Maj7','7','m7','m7','Maj7'],cf:['Menor 7ma menor','Semidisminuido','Mayor 7ma mayor','Dominante 7','Menor 7ma menor','Menor 7ma menor','Mayor 7ma mayor'],cn:[[0,3,7,10],[2,5,8,0],[3,7,10,2],[5,9,0,3],[7,10,2,5],[9,0,3,7],[10,2,5,9]],origin:'C Mayor empezando en D. La 6ta mayor es la nota que lo separa del Eólico y le da ese brillo.',sound:'Menor con brillo. Funk, jazz modal, rock psicodélico. Santana vive aquí.',apply:'Sobre acordes m7 sin b6. Funk, Jazz, Fusion.',bassApply:'Groove de bajo funk sobre i–IV. Walking bass en i–ii.',nps3:'Geométricamente idéntico al Mayor — misma forma, diferente punto de inicio.',progs:[{name:'i–IV · El Movimiento Dórico',degs:[0,3],why:'IV mayor sobre tónica menor — solo posible en Dórico. Un semitono lo cambia todo.',genre:'Funk · Jazz Modal'},{name:'i–bVII–IV–i · Groove Funk',degs:[0,6,3,0],why:'Loop cíclico sin resolución. El bVII mantiene el groove suspendido.',genre:'Funk · Soul · R&B'}]},
-  phrygian:{name:'Frigio',mode:'Modo III — 3° grado de la Escala Mayor',intervals:[1,2,2,2,1,2,2],formula:['S','T','T','T','S','T','T'],degs:['i','bII','bIII','iv','v°','bVI','bvii'],ct:['m7','Maj7','7','m7','m7b5','Maj7','m7'],cf:['Menor 7ma menor','Mayor 7ma mayor','Dominante 7','Menor 7ma menor','Semidisminuido','Mayor 7ma mayor','Menor 7ma menor'],cn:[[0,3,7,10],[1,5,8,0],[3,7,10,1],[5,8,0,3],[7,10,1,5],[8,0,3,7],[10,1,5,8]],origin:'C Mayor empezando en E. El semitono entre raíz y 2da (E–F) es la firma de todo.',sound:'Oscuro, dramático, español, árabe, agresivo.',apply:'Sobre acordes m en metal, flamenco, música árabe.',bassApply:'Riffs de bajo frigio sobre i–bII. Metal con el semitono como ancla.',nps3:'El semitono al inicio — primer intervalo es 1 traste, no 2.',progs:[{name:'i–bII · El Riff Frigio',degs:[0,1],why:'Acorde mayor un semitono arriba — imposible en cualquier otro modo.',genre:'Metal · Flamenco'},{name:'i–bVII–bVI–bII · Cascada',degs:[0,6,5,1],why:'Baja hasta el bII — la tensión máxima. Drama puro.',genre:'Metal · Prog'}]},
-  lydian:{name:'Lidio',mode:'Modo IV — 4° grado de la Escala Mayor',intervals:[2,2,2,1,2,2,1],formula:['T','T','T','S','T','T','S'],degs:['I','II','III','#IV','V','VI','VII'],ct:['Maj7#11','7','m7','m7b5','Maj7','m7','m7'],cf:['Mayor 7ma mayor con #4','Dominante 7','Menor 7ma menor','Semidisminuido','Mayor 7ma mayor','Menor 7ma menor','Menor 7ma menor'],cn:[[0,4,7,11],[2,6,9,0],[4,7,11,2],[6,9,0,4],[7,11,2,6],[9,0,4,7],[11,2,6,9]],origin:'C Mayor empezando en F. El B en lugar del Bb esperado — el #4 que crea el efecto flotante.',sound:'Mágico, etéreo, flotante, cinematográfico.',apply:'Sobre Maj7#11. Rock instrumental, Fusion, Cine. Satriani, John Williams.',bassApply:'Líneas de bajo flotantes sobre I–II. Pedal de tónica.',nps3:'Igual al Mayor con la 4ta un traste más alto.',progs:[{name:'I–II · El Movimiento Lidio',degs:[0,1],why:'El II a un tono arriba crea el "float" característico.',genre:'Rock Instrumental · Cine'},{name:'I–II–III–II · Loop',degs:[0,1,2,1],why:'Sin resolución dominante — textura suspendida.',genre:'Post-Rock · Ambient'}]},
-  mixolydian:{name:'Mixolidio',mode:'Modo V — 5° grado de la Escala Mayor',intervals:[2,2,1,2,2,1,2],formula:['T','T','S','T','T','S','T'],degs:['I','II','III','IV','v','vi°','bVII'],ct:['7','m7','m7b5','Maj7','m7','m7b5','Maj7'],cf:['Dominante 7','Menor 7ma menor','Semidisminuido','Mayor 7ma mayor','Menor 7ma menor','Semidisminuido','Mayor 7ma mayor'],cn:[[0,4,7,10],[2,5,9,0],[4,7,10,2],[5,9,0,4],[7,10,2,5],[9,0,4,7],[10,2,5,9]],origin:'C Mayor empezando en G. La 7ma menor (F en lugar de F#) es toda la diferencia.',sound:'El sonido del rock y el blues. Mayor con suciedad en la 7ma.',apply:'Sobre dom7. Blues, Rock, Funk, Reggae.',bassApply:'El idioma del bajo en blues y rock. La 7ma menor como nota de paso clave.',nps3:'Igual al Mayor con la última nota de cada posición bajada un traste.',progs:[{name:'I–bVII–IV · El Riff de Rock',degs:[0,6,3],why:'El trío definitorio del rock. El bVII evita la resolución dominante.',genre:'Rock · Blues Rock'},{name:'I7–IV · Blues Básico',degs:[0,3],why:'El I con 7ma dominante es el centro del blues.',genre:'Blues · Rock'}]},
-  aeolian:{name:'Menor Natural',mode:'Eólico — Modo VI de la Escala Mayor',intervals:[2,1,2,2,1,2,2],formula:['T','S','T','T','S','T','T'],degs:['i','ii°','bIII','iv','v','bVI','bVII'],ct:['m7','m7b5','Maj7','m7','m7','Maj7','7'],cf:['Menor 7ma menor','Semidisminuido','Mayor 7ma mayor','Menor 7ma menor','Menor 7ma menor','Mayor 7ma mayor','Dominante 7'],cn:[[0,3,7,10],[2,5,8,0],[3,7,10,2],[5,8,0,3],[7,10,2,5],[8,0,3,7],[10,2,5,8]],origin:'C Mayor empezando en A. La 6ta menor es lo que lo separa del Dórico — todo es oscuro.',sound:'Oscuro, melancólico, poderoso. El sonido del rock y el metal moderno.',apply:'Sobre i, im7, progresiones i–bVII–bVI. Metal, Rock, Baladas.',bassApply:'El idioma del bajista de metal. Riffs en i–bVII–bVI. Groove oscuro.',nps3:'El patrón más practicado en rock/metal.',progs:[{name:'i–bVII–bVI–bVII · El Riff de Metal',degs:[0,6,5,6],why:'La progresión definitoria del metal. Oscuridad, potencia, drama.',genre:'Metal · Rock'},{name:'i–bVI–bIII–bVII · Canon Menor',degs:[0,5,2,6],why:'Movimiento de bajo descendente que el oído encuentra intuitivo.',genre:'Pop · Rock · Metal Melódico'},{name:'i–iv–v · Menor Clásica',degs:[0,3,4],why:'Sin V dominante armónico — carácter antiguo y modal.',genre:'Folk · Doom Metal'},{name:'i–bIII–iv–bVII · Power Ballad',degs:[0,2,3,6],why:'Anatomía de la power ballad. bIII luminoso, iv profundo, bVII el vuelo.',genre:'Power Ballad · AOR'}]},
-  locrian:{name:'Locrio',mode:'Modo VII — 7° grado de la Escala Mayor',intervals:[1,2,2,1,2,2,2],formula:['S','T','T','S','T','T','T'],degs:['i°','bII','bIII','iv','bV','bVI','bvii'],ct:['m7b5','Maj7','m7','m7','Maj7','7','m7'],cf:['Semidisminuido','Mayor 7ma mayor','Menor 7ma menor','Menor 7ma menor','Mayor 7ma mayor','Dominante 7','Menor 7ma menor'],cn:[[0,3,6,10],[1,5,8,0],[3,6,10,1],[5,8,0,3],[6,10,1,5],[8,0,3,6],[10,1,5,8]],origin:'C Mayor empezando en B. La 5ta disminuida hace imposible un acorde estable sobre la raíz.',sound:'Máxima tensión e inestabilidad. Más herramienta que idioma.',apply:'Sobre m7b5. Jazz, metal progresivo.',bassApply:'Línea sobre el ii° en cadencias jazz.',nps3:'Dos semitonos al inicio — dedos apretados.',progs:[{name:'i°–bII · El Único Movimiento',degs:[0,1],why:'El bII es el único reposo del Locrio.',genre:'Jazz · Metal Prog'}]},
-  harm_minor:{name:'Menor Armónica',mode:'Menor con 7ma Mayor',intervals:[2,1,2,2,1,3,1],formula:['T','S','T','T','S','T+S','S'],degs:['i','ii°','bIII+','iv','V','bVI','VII°'],ct:['mMaj7','m7b5','Maj7#5','m7','7','Maj7','dim7'],cf:['Menor 7ma mayor','Semidisminuido','Mayor aumentado','Menor 7ma menor','Dominante 7','Mayor 7ma mayor','Disminuido completo'],cn:[[0,3,7,11],[2,5,8,0],[3,7,11,2],[5,8,0,3],[7,11,2,5],[8,0,3,7],[11,2,5,8]],origin:'Eólico con la 7ma subida un semitono. El V se convierte en dominante. El precio: la Segunda Aumentada (T+S).',sound:'Dramático, épico, oriental, flamenco, neoclásico.',apply:'Sobre i y V7 resolviendo a im. Metal neoclásico, Flamenco. Malmsteen.',bassApply:'Línea clásica i–V–i con la sensible. Riffs neoclásicos.',nps3:'El T+S crea una extensión forzada en el patrón.',progs:[{name:'i–V · La Cadencia Armónica',degs:[0,4],why:'V dominante resolviendo al i — imposible en Eólico.',genre:'Metal Neoclásico · Flamenco'},{name:'i–iv–V–i · Cadencia Clásica',degs:[0,3,4,0],why:'La progresión cadencial completa de la música menor. Bach, Malmsteen.',genre:'Clásico · Metal Técnico'}]},
-  mel_minor:{name:'Menor Melódica',mode:'Menor con 6ta y 7ma mayores (asc.)',intervals:[2,1,2,2,2,2,1],formula:['T','S','T','T','T','T','S'],degs:['i','ii','bIII+','IV','V','vi°','VII°'],ct:['mMaj7','m7','Maj7#5','7','7','m7b5','m7b5'],cf:['Menor 7ma mayor','Menor 7ma menor','Mayor aumentado','Dominante 7','Dominante 7','Semidisminuido','Semidisminuido'],cn:[[0,3,7,11],[2,5,9,0],[3,7,11,2],[5,9,0,3],[7,11,2,5],[9,0,3,7],[11,2,5,9]],origin:'La Armónica con la 6ta también subida. Casi idéntica a la Mayor excepto por la 3ra.',sound:'Sofisticado, ambiguo, moderno. Jazz, Fusion.',apply:'Modo IV (Lidio Dominante) sobre dom7#11. Modo VII (Alterada) sobre dom7alt.',bassApply:'Walking bass sofisticado en jazz. Líneas sobre ii–V alterados.',nps3:'Casi idéntica a la Mayor. Un ajuste de 1 traste en la 3ra.',progs:[{name:'iMaj7–ii · Loop Jazz',degs:[0,1],why:'El ii aquí es m7 (no m7b5) — loops más fluidos.',genre:'Jazz · Fusion · Bossa Nova'}]},
-  dim_ws:{name:'Disminuida Simétrica',mode:'Octatónica T–S · 8 notas',intervals:[2,1,2,1,2,1,2,1],formula:['T','S','T','S','T','S','T','S'],degs:['I','II','bIII','IV','bV','bVI','VI','VII'],ct:['dim7','m7','Maj7','7b5','dim7','Maj7','7','dim7'],cf:['Disminuido','Menor 7ma','Mayor 7ma','Dom 7b5','Disminuido','Mayor 7ma','Dominante 7','Disminuido'],cn:[[0,3,6,9],[2,5,9,0],[3,7,10,2],[5,9,0,3],[6,9,0,3],[8,0,3,7],[9,0,4,7],[11,2,5,8]],origin:'8 notas alternando T–S. Solo existen 3 versiones distintas — las demás son la misma desde otro grado.',sound:'Tenebroso, inestable, jazz avanzado, horror cinematográfico.',apply:'Sobre dim7 y dom7b9. Bebop, metal extremo, cine.',bassApply:'Riffs simétricos sobre dim7. Movimientos cromáticos en jazz.',nps3:'El patrón se repite cada 3 trastes.',progs:[{name:'dim7–im · Resolución Disminuida',degs:[0,3],why:'Cuatro resoluciones posibles. Cada nota actúa como sensible.',genre:'Jazz · Metal · Clásico'}]},
-  dim_sw:{name:'Disminuida Dominante',mode:'Octatónica S–T · 8 notas',intervals:[1,2,1,2,1,2,1,2],formula:['S','T','S','T','S','T','S','T'],degs:['I','bII','bIII','III','bV','V','VI','bVII'],ct:['7','Maj7','7','dim7','dim7','7','Maj7','7'],cf:['Dominante 7','Mayor 7ma','Dominante 7','Disminuido','Disminuido','Dominante 7','Mayor 7ma','Dominante 7'],cn:[[0,4,7,10],[1,5,8,0],[3,6,10,1],[4,7,10,1],[6,9,0,4],[7,11,2,5],[9,0,4,7],[10,2,5,9]],origin:'La disminuida octatónica empezando por el Semitono. Sobre dominantes.',sound:'Cromatismo controlado, jazzy-bebop.',apply:'Sobre dom7, dom7b9, dom7#9. Bebop, Jazz moderno.',bassApply:'Líneas cromáticas sobre V7. Walking bass con b9 y #9.',nps3:'Empieza con 1 traste (S), luego 2 (T).',progs:[{name:'V7alt–i · Cadencia Alterada',degs:[0,4],why:'Máxima tensión con b9 y #9. Resolución dramática.',genre:'Jazz · Bebop · Fusion'}]}
-};
-
-const INSTRUMENTS={
-  guitar:{label:'Guitarra',stringOptions:[6,7],defaultStrings:6,defaultTuning:'standard',
-    tunings:{standard:{label:'Standard',strings6:[40,45,50,55,59,64],strings7:[35,40,45,50,55,59,64]},drop_d:{label:'Drop D',strings6:[38,45,50,55,59,64],strings7:[35,38,45,50,55,59,64]},half_down:{label:'Half Step Down',strings6:[39,44,49,54,58,63],strings7:[34,39,44,49,54,58,63]},full_down:{label:'Full Step Down',strings6:[38,43,48,53,57,62],strings7:[33,38,43,48,53,57,62]},drop_c:{label:'Drop C',strings6:[36,43,48,53,57,62],strings7:[31,36,43,48,53,57,62]},open_g:{label:'Open G',strings6:[38,45,50,55,59,62],strings7:null},dadgad:{label:'DADGAD',strings6:[38,45,50,55,57,62],strings7:null},custom:{label:'Personalizada',strings6:null,strings7:null}}},
-  bass:{label:'Bajo',stringOptions:[4,5,6],defaultStrings:4,defaultTuning:'standard',
-    tunings:{standard:{label:'Standard',strings4:[28,33,38,43],strings5:[23,28,33,38,43],strings6:[23,28,33,38,43,47]},drop_d:{label:'Drop D',strings4:[26,33,38,43],strings5:[23,26,33,38,43],strings6:[23,26,33,38,43,47]},half_down:{label:'Half Step Down',strings4:[27,32,37,42],strings5:[22,27,32,37,42],strings6:[22,27,32,37,42,46]},full_down:{label:'Full Step Down',strings4:[26,31,36,41],strings5:[21,26,31,36,41],strings6:[21,26,31,36,41,45]},custom:{label:'Personalizada',strings4:null,strings5:null,strings6:null}}}
-};
-
-// ═══════ STATE ═══════
-const ST={theme:'dark',instrument:'guitar',strings:6,tuningKey:'standard',customMidis:null,scale:'major',root:'A',activePos:'all',activeTab:0,fbMode:'notes'};
-
-// ═══════ HELPERS ═══════
-function nn(r){return USE_FLAT.has(r)?NF:NS;}
-function midiToNote(m){return{note:CHROMATIC[m%12],octave:Math.floor(m/12)-1};}
-function noteToMidi(n,o){return(o+1)*12+CHROMATIC.indexOf(n);}
-function getStrMidis(){
-  if(ST.tuningKey==='custom')return ST.customMidis||getDefCustom();
-  const t=INSTRUMENTS[ST.instrument].tunings[ST.tuningKey];
-  if(!t)return getDefCustom();
-  return t[`strings${ST.strings}`]||getDefCustom();
-}
-function getDefCustom(){
-  const std=INSTRUMENTS[ST.instrument].tunings['standard'];
-  return(std[`strings${ST.strings}`]||[]).slice();
-}
-function getStrNames(midis){return midis.map(m=>CHROMATIC[m%12]);}
-function scaleNotes(root,key){
-  const s=SCALES[key],a=nn(root),ri=a.indexOf(root);
-  const notes=[root];let acc=0;
-  s.intervals.forEach((st,i)=>{if(i<s.intervals.length-1){acc+=st;notes.push(a[(ri+acc)%12]);}});
-  return notes;
-}
-function scaleSemis(key){
-  const s=SCALES[key];let acc=0;const semis=[0];
-  for(let i=0;i<s.intervals.length-1;i++){acc+=s.intervals[i];semis.push(acc%12);}
-  return semis;
-}
-
-// ═══════ FRETBOARD ═══════
-function buildFretboard(key,root,activePos,fbMode){
-  fbMode=fbMode||ST.fbMode||'notes';
-  const s=SCALES[key],a=nn(root),ri=a.indexOf(root);
-  const semis=scaleSemis(key);
-  const midis=getStrMidis();
-  const strCount=midis.length;
-  const STR_NAMES_ALL=['E','A','D','G','B','e','B','C'];
-
-  // Collect all dots
-  const allDots=[];
-  midis.forEach((baseMidi,si)=>{
-    const base=baseMidi%12;
-    for(let f=0;f<=22;f++){
-      const nv=(base+f)%12;
-      const rel=(nv-ri+12)%12;
-      if(semis.includes(rel))allDots.push({f,si,rel,degIdx:semis.indexOf(rel)});
-    }
-  });
-
-  // Compute 3NPS positions consecutively across the neck.
-  // Strategy: find all frets for each scale note on low E string,
-  // then build 7 consecutive non-overlapping 3NPS windows.
-  const lowBase=midis[0]%12;
-
-  // 1. Find ALL scale note frets on low string in ascending order
-  const lowStringFrets=[];
-  for(let f=0;f<=22;f++){
-    const rel=((lowBase+f)-ri+120)%12;
-    if(semis.includes(rel))lowStringFrets.push({f,rel,degIdx:semis.indexOf(rel)});
-  }
-
-  // 2. Build positions: each position anchors on the next available
-  //    low-string note after the previous position ended.
-  //    A 3NPS window spans roughly 4-5 frets.
-  //    We pick the 7 anchor frets that are most evenly spaced.
-  //    For standard tuning, Pos1 root anchor on low E,
-  //    then each subsequent position starts at next scale note on low E.
-
-  // Find anchor frets for each of the 7 positions in order
-  // by sorting lowStringFrets and picking the first 7 that
-  // cover the degIdx order matching semis order
-  const posAnchors=[];
-  let searchFrom=0;
-  for(let pi=0;pi<semis.length;pi++){
-    const targetDeg=pi; // position i should start on degree i
-    // find next occurrence of this degree on low string from searchFrom
-    let found=null;
-    for(let i=0;i<lowStringFrets.length;i++){
-      if(lowStringFrets[i].degIdx===targetDeg&&lowStringFrets[i].f>=searchFrom){
-        found=lowStringFrets[i];
-        break;
-      }
-    }
-    if(!found){
-      // wrap around or use first occurrence
-      found=lowStringFrets.find(x=>x.degIdx===targetDeg)||{f:searchFrom};
-    }
-    posAnchors.push(found.f);
-    searchFrom=found.f+1; // next position must start after this fret
-  }
-
-  // 3. For each anchor, collect exactly 3 scale notes per string
-  //    in a window of anchor-1 to anchor+5
-  const posDots=posAnchors.map((anchor)=>{
-    const dots=[];
-    midis.forEach((baseMidi,si)=>{
-      const strBase=baseMidi%12;
-      let found=0;
-      // Search window: centered on anchor with slight leftward bias
-      for(let f=Math.max(0,anchor-1);f<=Math.min(22,anchor+5)&&found<3;f++){
-        const nv=(strBase+f)%12,rel=(nv-ri+12)%12;
-        if(semis.includes(rel)){
-          dots.push(`${f}-${si}`);
-          found++;
-        }
-      }
-    });
-    return dots;
-  });
-
-  let activeSet=new Set();
-  if(activePos!=='all'){
-    const pi=parseInt(activePos)-1;
-    if(posDots[pi])posDots[pi].forEach(k=>activeSet.add(k));
-  }
-
-  const FRETW=44,STRGAP=30,PL=52,PTOP=30,PBOT=32;
-  const W=PL+22*FRETW+20,H=PTOP+(strCount-1)*STRGAP+PBOT+20;
-  const isDark=ST.theme==='dark';
-  const C={bg:isDark?'#111827':'#ffffff',nut:isDark?'#94a3b8':'#475569',fl:isDark?'#1e293b':'#cbd5e1',sl:isDark?'#334155':'#94a3b8',mk:isDark?'#1e293b':'#e2e8f0',fn:isDark?'#475569':'#64748b',dd:isDark?'rgba(255,255,255,.07)':'rgba(0,0,0,.06)',dt:isDark?'rgba(255,255,255,.18)':'rgba(0,0,0,.18)',lb:isDark?'#64748b':'#94a3b8'};
-
-  function sy(si){return PTOP+(strCount-1-si)*STRGAP;}
-  function fx(f){return f===0?PL-FRETW*.5:PL+(f-.5)*FRETW;}
-
-  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,sans-serif;min-width:800px;max-width:100%">`;
-  svg+=`<rect width="${W}" height="${H}" fill="${C.bg}" rx="10"/>`;
-
-  // String labels
-  getStrNames(midis).slice().reverse().forEach((lbl,di)=>{
-    const si=strCount-1-di;
-    svg+=`<text x="22" y="${sy(si)+4}" font-size="11" fill="${C.lb}" font-weight="700" text-anchor="middle">${lbl}</text>`;
-  });
-
-  // Nut
-  svg+=`<line x1="${PL}" y1="${sy(strCount-1)-10}" x2="${PL}" y2="${sy(0)+10}" stroke="${C.nut}" stroke-width="4" stroke-linecap="round"/>`;
-
-  // Fret lines + numbers
-  for(let f=1;f<=22;f++){
-    const x=PL+f*FRETW;
-    svg+=`<line x1="${x}" y1="${sy(strCount-1)-8}" x2="${x}" y2="${sy(0)+8}" stroke="${C.fl}" stroke-width="1"/>`;
-    svg+=`<text x="${PL+(f-.5)*FRETW}" y="${sy(0)+22}" font-size="9" fill="${C.fn}" text-anchor="middle">${f}</text>`;
-  }
-  svg+=`<text x="${PL-FRETW*.5}" y="${sy(0)+22}" font-size="9" fill="${C.fn}" text-anchor="middle">0</text>`;
-
-  // Markers
-  [3,5,7,9,15,17,19,21].forEach(f=>{
-    const x=PL+(f-.5)*FRETW,ym=sy(Math.floor((strCount-1)/2));
-    svg+=`<circle cx="${x}" cy="${ym}" r="4" fill="${C.mk}"/>`;
-  });
-  [12].forEach(f=>{
-    const x=PL+(f-.5)*FRETW;
-    const y1=sy(Math.floor(strCount/2)),y2=sy(Math.floor(strCount/2)-1);
-    svg+=`<circle cx="${x}" cy="${y1}" r="4" fill="${C.mk}"/><circle cx="${x}" cy="${y2}" r="4" fill="${C.mk}"/>`;
-  });
-
-  // String lines
-  for(let si=0;si<strCount;si++){
-    const y=sy(si),thick=.7+(si*(2.2/strCount));
-    svg+=`<line x1="${PL}" y1="${y}" x2="${PL+22*FRETW}" y2="${y}" stroke="${C.sl}" stroke-width="${thick}"/>`;
-  }
-
-  // Draw dimmed dots first
-  allDots.forEach(({f,si,rel,degIdx})=>{
-    const k=`${f}-${si}`,isA=activePos==='all'||activeSet.has(k);
-    if(isA)return;
-    const x=fx(f),y=sy(si),note=a[(ri+rel)%12];
-    svg+=`<circle cx="${x}" cy="${y}" r="8" fill="${C.dd}"/>`;
-    svg+=`<text x="${x}" y="${y+3.5}" font-size="7" fill="${C.dt}" text-anchor="middle" font-weight="600">${note}</text>`;
-  });
-
-  // Draw active dots
-  allDots.forEach(({f,si,rel,degIdx})=>{
-    const k=`${f}-${si}`,isA=activePos==='all'||activeSet.has(k);
-    if(!isA)return;
-    const isRoot=rel===0,x=fx(f),y=sy(si);
-    const col=DEG_CLR[degIdx%DEG_CLR.length];
-    const note=a[(ri+rel)%12];
-    const deg=s.degs[degIdx]||'';
-    // Label: tónica always shows note name; others depend on fbMode
-    const label=isRoot?note:(fbMode==='degrees'?deg:note);
-    // Adjust radius for longer degree labels (bVII, #IV, etc.)
-    const labelLen=label.length;
-    const r=isRoot?13:(labelLen>2?12:10);
-    if(isRoot)svg+=`<circle cx="${x}" cy="${y}" r="${r+5}" fill="${col}" opacity=".18"/>`;
-    svg+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${col}"/>`;
-    if(isRoot)svg+=`<circle cx="${x}" cy="${y}" r="${r+2}" fill="none" stroke="${col}" stroke-width="2" opacity=".6"/>`;
-    const fs=labelLen>2?6.5:(isRoot?9:8);
-    svg+=`<text x="${x}" y="${y+fs/2}" font-size="${fs}" fill="#fff" text-anchor="middle" font-weight="800">${label}</text>`;
-  });
-
-  svg+=`</svg>`;
-  return svg;
-}
-
-// ═══════ UI BUILDERS ═══════
-function intervalTrack(notes,formula,degs){
-  let h=`<div class="itrack">`;
-  notes.forEach((n,i)=>{
-    const isR=i===0;
-    h+=`<div class="inote"><div class="inote-n ${isR?'root':'note'}">${n}</div><div class="inote-d">${degs[i]||''}</div></div>`;
-    if(i<formula.length){const f=formula[i],cls=f==='S'?'semi':f==='T+S'?'tone3':'tone';h+=`<div class="iarrow"><div class="iarrow-l ${cls}">${f}</div><div class="iarrow-line"></div></div>`;}
-  });
-  h+=`</div><div class="ilegend"><div class="ileg-i"><div class="ileg-dot" style="background:var(--tc1)"></div>T = Tono (2 semitonos)</div><div class="ileg-i"><div class="ileg-dot" style="background:var(--tc2)"></div>S = Semitono (1 semitono)</div>${formula.includes('T+S')?'<div class="ileg-i"><div class="ileg-dot" style="background:var(--tc3)"></div>T+S = Segunda Aumentada (3 semitonos)</div>':''}</div>`;
-  return h;
-}
-
-function chordGrid(notes,key,root){
-  const s=SCALES[key],a=nn(root),ri=a.indexOf(root);
-  let h=`<div class="cg">`;
-  s.degs.forEach((deg,i)=>{
-    const cn=(s.cn[i]||[]).map(o=>a[(ri+o+120)%12]).join(' – ');
-    const ex=DEG_EXPLAINED[deg]||{};
-    h+=`<div class="cc" data-dg="${i+1}"><div class="cc-deg"><span class="cc-roman">${deg}</span><span class="cc-why">${ex.quality||''}</span></div><div class="cc-name">${notes[i]||'?'}<sup>${s.ct[i]}</sup></div><div class="cc-full">${s.cf[i]}</div><div class="cc-notes">${cn}</div>${ex.why?`<div class="cc-explain">${ex.why}</div>`:''}</div>`;
-  });
-  h+=`</div>`;return h;
-}
-
-function degLegend(notes,key){
-  const s=SCALES[key];
-  return`<div class="deg-legend">${s.degs.map((deg,i)=>`<div class="deg-chip"><div class="deg-dot" style="background:${DEG_CLR[i]}"></div><span class="deg-roman">${deg}</span><span class="deg-note">${notes[i]||'?'}</span></div>`).join('')}</div>`;
-}
-
-function posBtns(key){
-  const s=SCALES[key],cnt=Math.min(s.degs.length,7);
-  let h=`<button class="pos-btn all${ST.activePos==='all'?' active':''}" data-pos="all">Todas</button>`;
-  for(let i=1;i<=cnt;i++)h+=`<button class="pos-btn${ST.activePos===i?' active':''}" data-pos="${i}">Pos ${i} · ${s.degs[i-1]||''}</button>`;
-  return h;
-}
-
-function sessionStrip(){
-  return`<div class="sstrip"><div class="sseg s1"><span class="sseg-t">0–15 min</span>Calentamiento Armónico</div><div class="sseg s2"><span class="sseg-t">15–35 min</span>Mapeo 3NPS</div><div class="sseg s3"><span class="sseg-t">35–50 min</span>Arpegios Diatónicos</div><div class="sseg s4"><span class="sseg-t">50–65 min</span>Secuenciación</div><div class="sseg s5"><span class="sseg-t">65–75 min</span>Targeting</div></div>`;
-}
-
-function renderProgs(key,root){
-  const s=SCALES[key],notes=scaleNotes(root,key),progs=s.progs||[];
-  if(!progs.length)return`<div class="tbox tbox--s"><div class="tbox-ico">🎵</div><div><div class="tbox-lbl">Progresiones</div><div class="tbox-txt">Esta escala se usa principalmente como herramienta de color.</div></div></div>`;
-  let h=`<div class="tbox tbox--o" style="margin-bottom:20px"><div class="tbox-ico">📖</div><div><div class="tbox-lbl">Por qué mayúscula o minúscula</div><div class="tbox-txt"><strong>Mayúscula (I, IV, V) = acorde mayor · minúscula (i, iv, v) = acorde menor · ° = disminuido · b = bemol (semitono abajo) · # = sostenido (semitono arriba).</strong><br>El número indica la distancia desde la tónica. Así: <strong>bVII</strong> = acorde mayor cuya raíz está un semitono abajo del séptimo grado natural de la escala.</div></div></div><div class="prog-grid">`;
-  progs.forEach(p=>{
-    const chords=p.degs.map((di,ni)=>{
-      const n=notes[di]||'?',t=s.ct[di]||'',dg=s.degs[di]||'',isRoot=di===0;
-      return`<div class="prog-chord-wrap"><span class="prog-chord${isRoot?' root-chord':''}">${n}<sup>${t}</sup></span><span class="prog-deg">${dg}</span></div>${ni<p.degs.length-1?'<span class="prog-arrow">→</span>':''}`;
-    }).join('');
-    h+=`<div class="prog-card"><div class="prog-card-name">${p.name}</div><div class="prog-chords">${chords}</div><div class="prog-why">${p.why}</div><div class="prog-genre">🎸 ${p.genre}</div></div>`;
-  });
-  h+=`</div>`;
-  if(ST.instrument==='bass'&&s.bassApply)h+=`<div class="tbox tbox--a" style="margin-top:14px"><div class="tbox-ico">🎸</div><div><div class="tbox-lbl">Aplicación para Bajo</div><div class="tbox-txt">${s.bassApply}</div></div></div>`;
-  h+=`<div class="tbox tbox--o" style="margin-top:14px"><div class="tbox-ico">💡</div><div><div class="tbox-lbl">Cómo usar estas progresiones</div><div class="tbox-txt">Toca la progresión con acordes completos primero. Luego practica el Targeting sobre ella usando la escala de <strong>${root} ${s.name}</strong>. Aquí se fusionan teoría y práctica.</div></div></div>`;
-  return h;
-}
-
-function renderExercises(root,key){
-  const s=SCALES[key];
-  const isGuitar=ST.instrument==='guitar';
-  const techs=isGuitar?['Terceras Diatónicas — Calentamiento','3NPS Posición 1 — Ascendente & Descendente','Secuencia de 3 (1-2-3, 2-3-4...)','Secuencia de 4 — Semicorcheas','Secuencia de 6 — Shred (1-2-3-2-1-2)','Sweep Picking — Arpegios I–IV–V','Tapping Diatónico — Extensiones','Targeting — Chord Tones sobre progresión']:['Fingerstyle — Línea diatónica','Slap + Pop sobre acorde i','Walking Bass diatónico','Hammer-on / Pull-off','Palm Mute — Groove','Tapping de bajo','Targeting — Chord Tones','Groove sobre progresión'];
-  let h=`<div class="tbox tbox--s" style="margin-bottom:20px"><div class="tbox-ico">🎵</div><div><div class="tbox-lbl">Reproductor de ejercicios — Iteración 2</div><div class="tbox-txt">El reproductor con pentagrama, tablatura sincronizada y audio de ${ST.instrument==='bass'?'bajo':'guitarra'} eléctrico real se añade en la próxima versión. Por ahora sube tu tablatura de Guitar Pro.</div></div></div><div class="ex-grid">`;
-  techs.forEach((name,i)=>{
-    h+=`<div class="ex-card"><div class="ex-card-num">${i+1}</div><div class="ex-card-body"><div class="ex-card-name">${name} — ${root} ${s.name}</div><label class="uslot"><input type="file" accept="image/*,.svg" onchange="loadImg(this,'exi-${i}')"/><div id="exi-${i}"><span style="font-size:1.4rem">📸</span><span>Subir tablatura</span><span style="font-size:.65rem;color:var(--t3)">PNG / SVG · Guitar Pro</span></div></label></div></div>`;
-  });
-  h+=`</div>`;return h;
-}
-
-// ═══════ SELECTORS ═══════
-function renderStrings(){
-  const sel=document.getElementById('stringsSelect');
-  if(!sel)return;
-  const opts=INSTRUMENTS[ST.instrument].stringOptions;
-  sel.innerHTML=opts.map(n=>`<option value="${n}"${n===ST.strings?' selected':''}>${n} cuerdas</option>`).join('');
-  sel.onchange=e=>{
-    ST.strings=parseInt(e.target.value);ST.tuningKey=INSTRUMENTS[ST.instrument].defaultTuning;ST.customMidis=null;ST.activePos='all';
-    renderTuning();renderAll();
-  };
-}
-
-function renderTuning(){
-  const sel=document.getElementById('tuningSelect');
-  if(!sel)return;
-  const tunings=INSTRUMENTS[ST.instrument].tunings,sk=`strings${ST.strings}`;
-  const avail=Object.entries(tunings).filter(([k,t])=>k==='custom'||(t[sk]!=null));
-  sel.innerHTML=avail.map(([k,t])=>`<option value="${k}"${k===ST.tuningKey?' selected':''}>${t.label}</option>`).join('');
-  sel.onchange=e=>{ST.tuningKey=e.target.value;ST.customMidis=null;ST.activePos='all';renderCustomTuning();renderAll();};
-  renderCustomTuning();
-}
-
-function renderCustomTuning(){
-  const w=document.getElementById('customTuningWrap');
-  if(ST.tuningKey!=='custom'){w.innerHTML='';return;}
-  const midis=ST.customMidis||getDefCustom();ST.customMidis=midis;
-  w.innerHTML=`<div class="custom-tuning-label">Afinación personalizada:</div><div class="custom-tuning-grid">${midis.map((m,i)=>{const{note,octave}=midiToNote(m);return`<div class="custom-str-row"><span class="cstr-lbl">Cuerda ${i+1}</span><select class="cstr-note sel-sm" data-idx="${i}" data-type="note">${CHROMATIC.map(n=>`<option${n===note?' selected':''}>${n}</option>`).join('')}</select><select class="cstr-oct sel-sm" data-idx="${i}" data-type="oct">${OCTAVES.map(o=>`<option${o===octave?' selected':''}>${o}</option>`).join('')}</select></div>`;}).join('')}</div>`;
-  w.querySelectorAll('select').forEach(sel=>sel.addEventListener('change',()=>{
-    const idx=parseInt(sel.dataset.idx),type=sel.dataset.type,cur=midiToNote(ST.customMidis[idx]);
-    const note=type==='note'?sel.value:cur.note,oct=type==='oct'?parseInt(sel.value):cur.octave;
-    ST.customMidis[idx]=noteToMidi(note,oct);ST.activePos='all';renderAll();
-  }));
-}
-
-function renderRoot(){
-  const sel=document.getElementById('rootSelect');
-  if(!sel)return;
-  sel.innerHTML=ROOT_LABELS.map((lbl,i)=>`<option value="${ROOT_VALS[i]}"${ROOT_VALS[i]===ST.root?' selected':''}>${lbl}</option>`).join('');
-  sel.onchange=e=>{ST.root=e.target.value;ST.activePos='all';renderAll();};
-}
-
-function loadImg(inp,id){
-  if(!inp.files||!inp.files[0])return;
-  const f=inp.files[0],r=new FileReader();
-  r.onload=e=>{
-    const el=document.getElementById(id);if(!el)return;
-    if(f.name.endsWith('.svg')){el.innerHTML=e.target.result;const sv=el.querySelector('svg');if(sv){sv.style.width='100%';sv.style.height='auto';}}
-    else el.innerHTML=`<img src="${e.target.result}" style="width:100%;height:auto;border-radius:8px" alt="Tab"/>`;
-    const lbl=el.closest('label');if(lbl){lbl.style.cursor='default';lbl.style.border='1px solid var(--bd2)';lbl.style.background='none';}
-  };
-  f.name.endsWith('.svg')?r.readAsText(f):r.readAsDataURL(f);
-}
-
-// ═══════ MAIN RENDER ═══════
-function renderFBOnly(){
-  const el=document.getElementById('fb-svg');
-  if(el)el.innerHTML=buildFretboard(ST.scale,ST.root,ST.activePos);
-}
-
-function renderAll(){
-  const s=SCALES[ST.scale],notes=scaleNotes(ST.root,ST.scale);
-  const midis=getStrMidis(),strNames=getStrNames(midis);
-  const fbSVG=buildFretboard(ST.scale,ST.root,ST.activePos);
-  const posCount=Math.min(s.degs.length,7);
-
-  document.getElementById('scaleContent').innerHTML=`
-    <div class="sh">
-      <div class="sh-name">${ST.root} <span>${s.name}</span></div>
-      <div class="sh-meta"><div class="sh-type">${s.mode}</div><div class="sh-desc">${s.sound.split('.')[0]}.</div></div>
-      <div class="sh-right">
-        <div class="sh-notes">${notes.join(' – ')}</div>
-        <div class="sh-tuning">🎸 ${INSTRUMENTS[ST.instrument].label} · ${ST.strings}c · ${strNames.join('-')}</div>
-      </div>
-    </div>
-    ${sessionStrip()}
-    <div class="ctabs" id="ctabs">
-      <button class="ctab${ST.activeTab===0?' active':''}" data-t="0">📐 Teoría & Acordes</button>
-      <button class="ctab${ST.activeTab===1?' active':''}" data-t="1">🎸 Mapa 3NPS</button>
-      <button class="ctab${ST.activeTab===2?' active':''}" data-t="2">🏋️ Ejercicios</button>
-      <button class="ctab${ST.activeTab===3?' active':''}" data-t="3">🎶 Progresiones</button>
-    </div>
-
-    <div class="tpanel${ST.activeTab===0?' active':''}" id="t0">
-      <div class="slbl">Fórmula de Intervalos</div>
-      <div class="stitle">${ST.root} ${s.name}</div>
-      <div class="ssub">Cada flecha = distancia entre notas consecutivas. <strong>T = Tono (2 semitonos) · S = Semitono (1 semitono)</strong>. Esta fórmula es la huella digital de la escala — idéntica en cualquier tónica.</div>
-      ${intervalTrack(notes,s.formula,s.degs)}
-      <div class="div"></div>
-      <div class="tbox tbox--o"><div class="tbox-ico">🧱</div><div><div class="tbox-lbl">De dónde sale</div><div class="tbox-txt">${s.origin}</div></div></div>
-      <div class="tbox tbox--s"><div class="tbox-ico">👂</div><div><div class="tbox-lbl">Cómo suena y por qué</div><div class="tbox-txt">${s.sound}</div></div></div>
-      <div class="tbox tbox--a"><div class="tbox-ico">🎯</div><div><div class="tbox-lbl">${ST.instrument==='bass'?'Aplicación para bajo':'Cuándo y sobre qué usarla'}</div><div class="tbox-txt">${ST.instrument==='bass'?s.bassApply:s.apply}</div></div></div>
-      <div class="div"></div>
-      <div class="slbl">Acordes Diatónicos</div>
-      <div class="stitle">Tétradas en ${ST.root} ${s.name}</div>
-      <div class="ssub"><strong>Mayúscula = mayor · minúscula = menor · ° = disminuido · b = bemol · # = sostenido.</strong><br>Cada grado genera un acorde de 4 notas. Estos son los únicos acordes disponibles en esta tonalidad.</div>
-      ${chordGrid(notes,ST.scale,ST.root)}
-    </div>
-
-    <div class="tpanel${ST.activeTab===1?' active':''}" id="t1">
-      <div class="slbl">Sistema 3 Notas Por Cuerda</div>
-      <div class="stitle">Diapasón Completo — ${ST.root} ${s.name}</div>
-      <div class="ssub">Trastes 0–22. <strong>Punto con anillo:</strong> tónica (${ST.root}). <strong>Brillante:</strong> posición activa. <strong>Tenue:</strong> resto del mástil.</div>
-      ${degLegend(notes,ST.scale)}
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-        <div class="pos-label" style="margin-bottom:0">Seleccionar Posición 3NPS</div>
-        <div class="fb-mode-toggle">
-          <button class="fb-mode-btn${ST.fbMode==='notes'?' active':''}" id="fbModeNotes">🎵 Notas</button>
-          <button class="fb-mode-btn${ST.fbMode==='degrees'?' active':''}" id="fbModeDegrees">📐 Grados</button>
-        </div>
-      </div>
-      <div class="pos-btns" id="posBtns">${posBtns(ST.scale)}</div>
-      <div class="fb-wrap">
-        <div class="fb-header">
-          <span class="fb-title" id="fbTitle">${ST.activePos==='all'?`Todas las posiciones — ${ST.root} ${s.name}`:`Posición ${ST.activePos} (${s.degs[(ST.activePos-1)%s.degs.length]}) — ${ST.root} ${s.name}`}</span>
-          <span class="bdg bdg-mode">${s.mode}</span>
-          <span class="bdg bdg-key">${ST.root} · ${ST.strings}c</span>
-        </div>
-        <div class="fb-scroll"><div id="fb-svg">${fbSVG}</div></div>
-        <div class="fb-footer">
-          <span class="tabn"><strong>Anillo morado:</strong> Tónica (${ST.root})</span>
-          <span class="tabn"><strong>3NPS:</strong> ${s.nps3}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="tpanel${ST.activeTab===2?' active':''}" id="t2">
-      <div class="slbl">Ejercicios de Sesión</div>
-      <div class="stitle">Técnicas — ${ST.root} ${s.name} · ${INSTRUMENTS[ST.instrument].label}</div>
-      <div class="ssub">Ejercicios específicos para <strong>${INSTRUMENTS[ST.instrument].label} de ${ST.strings} cuerdas</strong>.</div>
-      ${renderExercises(ST.root,ST.scale)}
-    </div>
-
-    <div class="tpanel${ST.activeTab===3?' active':''}" id="t3">
-      <div class="slbl">Progresiones Diatónicas</div>
-      <div class="stitle">Progresiones en ${ST.root} ${s.name}</div>
-      <div class="ssub">Las progresiones más efectivas para esta escala con la explicación de <strong>por qué funcionan</strong>.</div>
-      ${renderProgs(ST.scale,ST.root)}
-    </div>`;
-
-  // Bind tabs
-  document.querySelectorAll('.ctab').forEach(t=>t.addEventListener('click',()=>{
-    ST.activeTab=parseInt(t.dataset.t);
-    document.querySelectorAll('.ctab').forEach(x=>x.classList.toggle('active',x===t));
-    document.querySelectorAll('.tpanel').forEach(p=>p.classList.toggle('active',p.id===`t${ST.activeTab}`));
-  }));
-
-  // Bind fretboard mode toggle
-  ['fbModeNotes','fbModeDegrees'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    el.addEventListener('click',()=>{
-      ST.fbMode=id==='fbModeNotes'?'notes':'degrees';
-      document.querySelectorAll('.fb-mode-btn').forEach(b=>b.classList.toggle('active',
-        (ST.fbMode==='notes'&&b.id==='fbModeNotes')||(ST.fbMode==='degrees'&&b.id==='fbModeDegrees')
-      ));
-      renderFBOnly();
-    });
-  });
-
-  // Bind position buttons
-  document.querySelectorAll('.pos-btn').forEach(b=>b.addEventListener('click',()=>{
-    ST.activePos=b.dataset.pos==='all'?'all':parseInt(b.dataset.pos);
-    document.querySelectorAll('.pos-btn').forEach(x=>x.classList.toggle('active',x===b));
-    const ti=document.getElementById('fbTitle');
-    if(ti)ti.textContent=ST.activePos==='all'?`Todas las posiciones — ${ST.root} ${s.name}`:`Posición ${ST.activePos} (${s.degs[(ST.activePos-1)%s.degs.length]}) — ${ST.root} ${s.name}`;
-    renderFBOnly();
-  }));
-}
-
-// ═══════ INIT ═══════
-document.getElementById('themeBtn').addEventListener('click',()=>{
-  ST.theme=ST.theme==='dark'?'light':'dark';
-  document.documentElement.setAttribute('data-theme',ST.theme);
-  document.getElementById('themeBtn').textContent=ST.theme==='dark'?'🌙':'☀️';
-  renderFBOnly();
-});
-
-document.querySelectorAll('.inst-btn').forEach(b=>b.addEventListener('click',()=>{
-  ST.instrument=b.dataset.inst;ST.strings=INSTRUMENTS[ST.instrument].defaultStrings;
-  ST.tuningKey=INSTRUMENTS[ST.instrument].defaultTuning;ST.customMidis=null;ST.activePos='all';
-  document.querySelectorAll('.inst-btn').forEach(x=>x.classList.toggle('active',x===b));
-  renderStrings();renderTuning();renderAll();
-}));
-
-document.getElementById('scaleSelect').addEventListener('change',e=>{ST.scale=e.target.value;ST.activePos='all';renderAll();});
-
-renderStrings();
-renderTuning();
-renderRoot();
-renderAll();
+<script type="module">
+import { init } from "./js/app.js";
+init();
 </script>
 </body>
 </html>
